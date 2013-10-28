@@ -1,12 +1,12 @@
-79483a3e5f38dba61d80ce6ee7db1b86 *DESCRIPTION
+2924348e626ee38038bccafbf0771d6c *DESCRIPTION
 786097c3cd2e480df0c09b7fa4f3e0c5 *LICENSE
 14ab0f63710b1ae8c2cf66add2d99f05 *NAMESPACE
-e70f2c79f19deeadaabf8b2ff6739250 *NEWS
+e9284f63d33e4f8a80e005833034cb5d *NEWS
 c3eb1860972b0e94e895fee2465340e2 *R/compare.r
-f64dc1c8caa7aed93e2a14ca76b9e7b9 *R/predict.r
+d5d940cba59e4e65fd763a7f6c4bdc0a *R/predict.r
 8ced7a40094634b1940a34c0a00c5d1f *R/publications.r
 75f294f93feba3e85aba1c455202a2bf *R/scholar-package.r
-48389427fbfbbd6cc0f844e0706fa6aa *R/scholar.r
+ed428f9f5d83d130c58f6c40c6f1d26c *R/scholar.r
 7c35676e623e24b89f1e54b004248fa3 *README.md
 f08a725b163d71bd7dea1c6e852590ac *man/compare_scholar_careers.Rd
 f964567d9b467629aa457868003677c5 *man/compare_scholars.Rd
@@ -17,6 +17,6 @@ cd3eca2128a151860f445e1329cd00eb *man/get_num_articles.Rd
 691557864245d5f3ab135cee0540fd93 *man/get_oldest_article.Rd
 a2947152775b62492f7f201c94c22f7d *man/get_profile.Rd
 96f3f5ef96fea9f7a6956233a00007c0 *man/get_publications.Rd
-998ad23e87f9b3c934597b9962a7fb7d *man/predict_h_index.Rd
+752fa20f9e4fcaa1bcc530175e76b7f8 *man/predict_h_index.Rd
 dd11f30b9afea57733c6c7479ab06326 *man/scholar.Rd
 5a8588cc8c6e24e07226789e2d1c0810 *man/tidy_id.Rd
