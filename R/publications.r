@@ -39,10 +39,10 @@ get_publications <- function(id, cstart = 0, pagesize=100, flush=FALSE) {
     ## Ensure we're only getting one scholar's publications
     id <- tidy_id(id)
 
-    ## Define the cache path 
+    ## Define the cache path
     cache.dir <- file.path(tempdir(), "r-scholar")
     setCacheRootPath(cache.dir)
-    
+
     ## Clear the cache if requested
     if (flush) saveCache(NULL, key=list(id, cstart))
 
@@ -51,18 +51,18 @@ get_publications <- function(id, cstart = 0, pagesize=100, flush=FALSE) {
 
     ## If not, get the data and save it to cache
     if (is.null(data)) {
-  
+
         ## Build the URL
         url_template <- "http://scholar.google.com/citations?hl=en&user=%s&cstart=%d&pagesize=%d"
         url <- sprintf(url_template, id, cstart, pagesize)
 
         ## Load the page
         page <- GET(url, handle=getOption("scholar_handle")) %>% read_html()
-        cites <- page %>% html_nodes(xpath="//tr[@class='gsc_a_tr']") 
+        cites <- page %>% html_nodes(xpath="//tr[@class='gsc_a_tr']")
 
         title <- cites %>% html_nodes(".gsc_a_at") %>% html_text()
         pubid <- cites %>% html_nodes(".gsc_a_at") %>%
-            html_attr("href") %>% str_extract(":.*$") %>% str_sub(start=2)
+            html_attr("data-href") %>% str_extract(":.*$") %>% str_sub(start=2)
         doc_id <- cites %>% html_nodes(".gsc_a_ac") %>% html_attr("href") %>%
             str_extract("cites=.*$") %>% str_sub(start=7)
         cited_by <- suppressWarnings(cites %>% html_nodes(".gsc_a_ac") %>%
@@ -73,7 +73,7 @@ get_publications <- function(id, cstart = 0, pagesize=100, flush=FALSE) {
         authors <- cites %>% html_nodes("td .gs_gray") %>% html_text() %>%
             as.data.frame(stringsAsFactors=FALSE) %>%
                 filter(row_number() %% 2 == 1)  %>% .[[1]]
-    
+
         ## Get the more complicated parts
         details <- cites %>% html_nodes("td .gs_gray") %>% html_text() %>%
             as.data.frame(stringsAsFactors=FALSE) %>%
@@ -99,19 +99,19 @@ get_publications <- function(id, cstart = 0, pagesize=100, flush=FALSE) {
                            year=year,
                            cid=doc_id,
                            pubid=pubid)
-        
+
         ## Check if we've reached pagesize articles. Might need
         ## to search the next page
         if (nrow(data) > 0 && nrow(data)==pagesize) {
             data <- rbind(data, get_publications(id, cstart=cstart+pagesize, pagesize=pagesize))
         }
-    
+
         ## Save it after everything has been retrieved.
         if (cstart == 0) {
             saveCache(data, key=list(id, cstart))
         }
     }
-  
+
     return(data)
 }
 
@@ -128,35 +128,40 @@ get_publications <- function(id, cstart = 0, pagesize=100, flush=FALSE) {
 ##' @importFrom httr GET
 ##' @export
 get_article_cite_history <- function (id, article) {
-    
+
     id <- tidy_id(id)
-    url_base <- paste0("http://scholar.google.com/citations?", 
+    url_base <- paste0("http://scholar.google.com/citations?",
                        "view_op=view_citation&hl=en&citation_for_view=")
     url_tail <- paste(id, article, sep=":")
     url <- paste0(url_base, url_tail)
 
-    doc <- GET(url, handle=getOption("scholar_handle")) %>% read_html()
+    res <- GET(url, handle=getOption("scholar_handle")) 
+    httr::stop_for_status(res, "get user id / article information")
+    doc <- read_html(res)
 
     ## Inspect the bar chart to retrieve the citation values and years
     years <- doc %>%
-        html_nodes(xpath="//*/div[@id='gsc_graph_bars']/a") %>%
+        html_nodes(xpath="//*/div[@id='gsc_vcd_graph_bars']/a") %>%
             html_attr("href") %>%
                 str_replace(".*as_yhi=(.*)$", "\\1") %>%
                     as.numeric()
     vals <- doc %>%
-        html_nodes(xpath="//*/span[@class='gsc_g_al']") %>%
+        html_nodes(xpath="//*/span[@class='gsc_vcd_g_al']") %>%
             html_text() %>%
                 as.numeric()
 
     df <- data.frame(year = years, cites = vals)
-
-    ## There may be undefined years in the sequence so fill in these gaps
-    tmp <- merge(data.frame(year=min(years):max(years)),
-                 df, all.x=TRUE)
-    tmp[is.na(tmp)] <- 0
-
-    tmp$pubid <- article
-    return(tmp)
+    if(nrow(df)>0) {
+        ## There may be undefined years in the sequence so fill in these gaps
+        df <- merge(data.frame(year=min(years):max(years)),
+                     df, all.x=TRUE)
+        df[is.na(df)] <- 0
+        df$pubid <- article
+    } else {
+        # complete the 0 row data.frame to be consistent with normal results
+        df$pubid <- vector(mode = mode(article))
+    }
+    return(df)
 }
 
 ##' Calculates how many articles a scholar has published
@@ -166,7 +171,7 @@ get_article_cite_history <- function (id, article) {
 ##' @param id a character string giving the Google Scholar ID
 ##' @return an integer value (max 100)
 ##' @export
-get_num_articles <- function(id) {  
+get_num_articles <- function(id) {
     papers <- get_publications(id)
     return(nrow(papers))
 }
@@ -174,7 +179,7 @@ get_num_articles <- function(id) {
 ##' Gets the year of the oldest article for a scholar
 ##'
 ##' Gets the year of the oldest article published by a given scholar.
-##' 
+##'
 ##' @param id 	a character string giving the Google Scholar ID
 ##' @return the year of the oldest article
 ##' @export
