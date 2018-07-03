@@ -64,3 +64,13 @@ csc <- compare_scholar_careers(ids)
 ggplot(csc, aes(career_year, cites, group=name, color=name)) + geom_line() + geom_point() +
     theme(legend.position=c(.2, .8))
 
+## ------------------------------------------------------------------------
+# Be careful with specifying too many coauthors as the visualization of the
+# network can get very messy.
+coauthor_network <- get_coauthors('amYIKXQAAAAJ&hl', n_coauthors = 7)
+
+coauthor_network
+
+## ------------------------------------------------------------------------
+plot_coauthors(coauthor_network)
+
