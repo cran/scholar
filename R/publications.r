@@ -11,12 +11,16 @@ utils::globalVariables(c("."))
 ##' @param cstart an integer specifying the first article to start
 ##' counting.  To get all publications for an author, omit this
 ##' parameter.
+##' @param cstop an integer specifying the last article to
+##' process.
 ##' @param pagesize an integer specifying the number of articles to
 ##' fetch
 ##' @param flush should the cache be flushed?  Search results are
 ##' cached by default to speed up repeated queries.  If this argument
 ##' is TRUE, the cache will be cleared and the data reloaded from
 ##' Google.
+##' @param sortby a character with value \code{"citation"} or
+##' value \code{"year"} specifying how results are sorted.
 ##' @details Google uses two id codes to uniquely reference a
 ##' publication.  The results of this method includes \code{cid} which
 ##' can be used to link to a publication's full citation history
@@ -33,7 +37,13 @@ utils::globalVariables(c("."))
 ##' @importFrom rvest html_nodes html_text html_attr
 ##' @import R.cache
 ##' @export
-get_publications <- function(id, cstart = 0, pagesize=100, flush=FALSE) {
+get_publications <- function(id, cstart = 0, cstop = Inf, pagesize=100, flush=FALSE, sortby="citation") {
+
+    ## Make sure pagesize is not greater than max allowed by Google Scholar
+    if (pagesize > 100) {
+        warning("pagesize: ", pagesize, " exceeds Google Scholar maximum. Setting to 100.")
+        pagesize <- 100
+    }
 
     ## Ensure we're only getting one scholar's publications
     id <- tidy_id(id)
@@ -48,15 +58,27 @@ get_publications <- function(id, cstart = 0, pagesize=100, flush=FALSE) {
     ## Check if we've cached it already
     data <- loadCache(list(id, cstart))
 
+    site <- getOption("scholar_site")
+
     ## If not, get the data and save it to cache
     if (is.null(data)) {
 
         ## Build the URL
-        url_template <- "http://scholar.google.com/citations?hl=en&user=%s&cstart=%d&pagesize=%d"
+
+        stopifnot(sortby == "citation" | sortby == "year")
+
+        if(sortby == "citation"){
+            url_template <- paste0(site, "/citations?hl=en&user=%s&cstart=%d&pagesize=%d")
+        }
+
+        if(sortby == "year"){
+            url_template <- paste0(site, "/citations?hl=en&user=%s&cstart=%d&pagesize=%d&sortby=pubdate")
+        }
+
         url <- sprintf(url_template, id, cstart, pagesize)
 
         ## Load the page
-        page <- get_resp(url) %>% read_html()
+        page <- get_scholar_resp(url) %>% read_html()
         cites <- page %>% html_nodes(xpath="//tr[@class='gsc_a_tr']")
 
         title <- cites %>% html_nodes(".gsc_a_at") %>% html_text()
@@ -101,6 +123,10 @@ get_publications <- function(id, cstart = 0, pagesize=100, flush=FALSE) {
 
         ## Check if we've reached pagesize articles. Might need
         ## to search the next page
+        if (cstart >= I(cstop)) {
+          return(data)
+        }
+
         if (nrow(data) > 0 && nrow(data)==pagesize) {
             data <- rbind(data, get_publications(id, cstart=cstart+pagesize, pagesize=pagesize))
         }
@@ -127,13 +153,14 @@ get_publications <- function(id, cstart = 0, pagesize=100, flush=FALSE) {
 ##' @export
 get_article_cite_history <- function (id, article) {
 
+    site <- getOption("scholar_site")
     id <- tidy_id(id)
-    url_base <- paste0("http://scholar.google.com/citations?",
+    url_base <- paste0(site, "/citations?",
                        "view_op=view_citation&hl=en&citation_for_view=")
     url_tail <- paste(id, article, sep=":")
     url <- paste0(url_base, url_tail)
 
-    res <- get_resp(url)
+    res <- get_scholar_resp(url)
     httr::stop_for_status(res, "get user id / article information")
     doc <- read_html(res)
 
@@ -194,13 +221,14 @@ get_oldest_article <- function(id) {
 ##' Get journal metrics (impact factor) for a journal list.
 ##'
 ##' @examples
+##' \dontrun{
 ##' library(scholar)
 ##'
 ##' id <- get_publications("bg0BZ-QAAAAJ&hl")
 ##' impact <- get_impactfactor(journals=id$journal, max.distance = 0.1)
 ##'
 ##' id <- cbind(id, impact)
-##'
+##'}
 ##' @param journals a character list giving the journal list
 ##' @param max.distance maximum distance allowed for a match bewteen journal and journal list.
 ##' Expressed either as integer, or as a fraction of the pattern length times the maximal transformation cost
@@ -212,6 +240,11 @@ get_oldest_article <- function(id) {
 ##' @export
 ##' @author Dominique Makowski and Guangchuang Yu
 get_impactfactor <- function(journals, max.distance = 0.05) {
+    get_journal_stats(journals, max.distance, impactfactor)
+}
+
+
+get_journal_stats <- function(journals, max.distance, source_data, col = "Journal") {
     journals <- as.character(journals)
     index <- rep(NA, length(journals))
 
@@ -222,7 +255,7 @@ get_impactfactor <- function(journals, max.distance = 0.05) {
         }
 
         closest <- agrep(journal,
-                         impactfactor$Journal,
+                         source_data[[col]],
                          max.distance = max.distance,
                          value = FALSE,
                          ignore.case = TRUE)
@@ -234,7 +267,7 @@ get_impactfactor <- function(journals, max.distance = 0.05) {
             ## index[i] <- closest[1]
 
 
-            j <- grep(paste0("^", journal, "$"), impactfactor$Journal[closest], ignore.case=TRUE)
+            j <- grep(paste0("^", journal, "$"), source_data[[col]][closest], ignore.case=TRUE)
             if (length(j) > 0) {
                 j <- j[1]
                 index[i] <- closest[j]
@@ -254,7 +287,7 @@ get_impactfactor <- function(journals, max.distance = 0.05) {
                           paste0("^", journal),
                           paste0(journal, "$"))
             for (pp in patterns) {
-                j <- get_hit(pp, impactfactor$Journal[closest])
+                j <- get_hit(pp, source_data[[col]][closest])
                 if (!is.null(j)) {
                     hit <- j
                     break
@@ -266,6 +299,35 @@ get_impactfactor <- function(journals, max.distance = 0.05) {
 
     }
 
-    return(impactfactor[index, ])
+    return(source_data[index, ])
 }
+
+
+##' Get journal ranking.
+##'
+##' Get journal ranking for a journal list.
+##'
+##' @examples
+##' \dontrun{
+##' library(scholar)
+##'
+##' id <- get_publications("bg0BZ-QAAAAJ&hl")
+##' impact <- get_journalrank(journals=id$journal)
+##'
+##' id <- cbind(id, impact)
+##' }
+##' @param journals a character list giving the journal list
+##' @param max.distance maximum distance allowed for a match bewteen journal and journal list.
+##' Expressed either as integer, or as a fraction of the pattern length times the maximal transformation cost
+##' (will be replaced by the smallest integer not less than the corresponding fraction), or a list with possible components
+##'
+##' @return Journal ranking data.
+##'
+##' @import dplyr
+##' @export
+##' @author Dominique Makowski and Guangchuang Yu
+get_journalrank <- function(journals, max.distance = 0.05) {
+    get_journal_stats(journals, max.distance, journalrankings)
+}
+
 
