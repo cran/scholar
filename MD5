@@ -1,4 +1,4 @@
-d29eecbe0235566a4d969510a2fd16f6 *DESCRIPTION
+e8b974d4ac7d18cd3107761d4a566f67 *DESCRIPTION
 ca3a361420dd7dc7e9333966ed806c40 *LICENSE
 d870bb80e2e6fc00b258447bbc399fdb *NAMESPACE
 88739c2aa81225740b16a254912bae5e *NEWS
@@ -14,7 +14,7 @@ b4635817cb4a396cebc9385a43867eb1 *R/scholar.r
 0760b25039769251fa729d82e879de1e *R/sysdata.rda
 f0e6729fc932782e81869cfbf982841e *R/utils.R
 eee122613f671925b0bfe0b208d58bf2 *R/zzz.r
-139572eb5d3f79e0f3ec2d5fddbebfdc *build/partial.rdb
+79dab1d58a9d26187d1ba0e8c8fdc431 *build/partial.rdb
 6c9e43799b5f2a6f4244a897d9ecb9a6 *build/vignette.rds
 31a0a11074b4c9e98b6f0164f5fcd609 *inst/CITATION
 caac8d6138c4ffd1fca6f595a4c2a9f9 *inst/doc/scholar.R
