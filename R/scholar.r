@@ -17,7 +17,7 @@ utils::globalVariables(c("name"))
 ##' multiple scholars.
 ##'
 ##' @return 	a list containing the scholar's name, affiliation,
-##' citations, impact metrics, fields of study, homepage and
+##' citations, impact metrics, research interests, homepage and
 ##' the author's list of coauthors provided by Google Scholar.
 ##'
 ##' @examples {
@@ -28,7 +28,7 @@ utils::globalVariables(c("name"))
 ##' @export
 ##' @importFrom stringr str_trim str_split
 ##' @importFrom xml2 read_html
-##' @importFrom rvest html_table html_nodes html_text
+##' @importFrom rvest html_table html_nodes html_text html_children
 ##' @importFrom dplyr "%>%"
 get_profile <- function(id) {
     site <- getOption("scholar_site")
@@ -36,7 +36,10 @@ get_profile <- function(id) {
     url <- compose_url(id, url_template)
 
     ## Generate a list of all the tables identified by the scholar ID
-    page <- get_scholar_resp(url) %>% read_html()
+    page <- get_scholar_resp(url)
+    if (is.null(page)) return(NA)
+
+    page <- page %>% read_html()
     tables <- page %>% html_table()
     
   ## The citation stats are in tables[[1]]$tables$stats
@@ -47,6 +50,7 @@ get_profile <- function(id) {
   ## The personal info is in
   name <- page %>% html_nodes(xpath="//*/div[@id='gsc_prf_in']") %>% html_text()
   bio_info <- page %>% html_nodes(xpath="//*/div[@class='gsc_prf_il']") %>% html_text()
+  interests <- page %>% html_nodes(xpath="//*/div[@id='gsc_prf_int']") %>% html_children() %>% html_text()
   affiliation <- bio_info[1]
 
   ## Specialities (trim out HTML non-breaking space)
@@ -65,6 +69,7 @@ get_profile <- function(id) {
               i10_index=as.numeric(as.character(stats[rows,2])),
               fields=specs,
               homepage=homepage,
+              interests=interests,
               coauthors=coauthors$coauthors))
 }
 
@@ -91,7 +96,10 @@ get_citation_history <- function(id) {
     url <- compose_url(id, url_template)
 
     ## A better way would actually be to read out the plot of citations
-    page <- get_scholar_resp(url) %>% read_html()
+    page <- get_scholar_resp(url)
+    if (is.null(page)) return(page)
+
+    page <- page %>% read_html()
     years <- page %>% html_nodes(xpath="//*/span[@class='gsc_g_t']") %>%
         html_text() %>% as.numeric()
     vals <- page %>% html_nodes(xpath="//*/span[@class='gsc_g_al']") %>%
@@ -272,7 +280,10 @@ get_scholar_id <- function(last_name="", first_name="", affiliation = NA) {
       last_name,
       '&hl=en&oi=ao'
   )
-  aa <- content(get_scholar_resp(url), as='text')
+  page <- get_scholar_resp(url)
+  if (is.null(page)) return(NA)
+
+  aa <- content(page, as='text')
   ids <-
     stringr::str_extract_all(string = aa, pattern = ";user=[[:alnum:]]+[[:punct:]]")
   
