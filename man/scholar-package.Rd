@@ -6,7 +6,7 @@
 \alias{scholar-package}
 \title{scholar}
 \source{
-The package reads data from \url{http://scholar.google.com}.  Dates
+The package reads data from \url{https://scholar.google.com}.  Dates
   and citation counts are estimated and are determined automatically by a
   computer program. Use at your own risk.
 }
@@ -17,7 +17,7 @@ scholars and predicting h-index scores based on past publication records.
 }
 \note{
 A complementary set of Google Scholar functions can be found at
-  \url{http://biostat.jhsph.edu/~jleek/code/googleCite.r}.  The
+  \url{https://www.biostat.jhsph.edu/~jleek/code/googleCite.r}.  The
   \code{scholar} package was developed independently.
 }
 \section{Google Scholar cookies}{
@@ -47,11 +47,11 @@ Useful links:
 Authors:
 \itemize{
   \item James Keirstead \email{james.keirstead@gmail.com}
+  \item Gregory Jefferis \email{jefferis@gmail.com} (\href{https://orcid.org/0000-0002-0587-9355}{ORCID})
 }
 
 Other contributors:
 \itemize{
-  \item Gregory Jefferis \email{jefferis@gmail.com} [contributor]
   \item Gordon Getzinger [contributor]
   \item Jorge Cimentada \email{cimentadaj@gmail.com} [contributor]
   \item Max Czapanskiy \email{maxczapanskiy@gmail.com} [contributor]

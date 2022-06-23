@@ -13,8 +13,10 @@ utils::globalVariables(c("."))
 ##' parameter.
 ##' @param cstop an integer specifying the last article to
 ##' process.
-##' @param pagesize an integer specifying the number of articles to
-##' fetch
+##' @param pagesize an integer specifying the number of articles to fetch in one
+##'   batch. It is recommended to leave the default value of 100 unless you
+##'   experience time-out errors. Note this is \emph{not} the \bold{total}
+##'   number of publications to fetch.
 ##' @param flush should the cache be flushed?  Search results are
 ##' cached by default to speed up repeated queries.  If this argument
 ##' is TRUE, the cache will be cleared and the data reloaded from
@@ -171,8 +173,10 @@ get_article_cite_history <- function (id, article) {
 
     ## Inspect the bar chart to retrieve the citation values and years
     years <- doc %>%
-        html_nodes(".gsc_oci_g_t") %>% 
-        html_text() %>% 
+        html_nodes(".gsc_oci_g_a") %>% 
+        html_attr('href') %>% 
+        stringr::str_match("as_ylo=(\\d{4})&") %>% 
+        "["(,2) %>% 
         as.numeric()
     vals <- doc %>%
         html_nodes(".gsc_oci_g_al") %>% 
@@ -220,33 +224,34 @@ get_oldest_article <- function(id) {
 
 
 
-##' Get journal metrics.
-##'
-##' Get journal metrics (impact factor) for a journal list.
-##'
-##' @examples
-##' \dontrun{
-##' library(scholar)
-##'
-##' id <- get_publications("bg0BZ-QAAAAJ&hl")
-##' impact <- get_impactfactor(journals=id$journal, max.distance = 0.1)
-##'
-##' id <- cbind(id, impact)
-##'}
-##' @param journals a character list giving the journal list
-##' @param max.distance maximum distance allowed for a match bewteen journal and journal list.
-##' Expressed either as integer, or as a fraction of the pattern length times the maximal transformation cost
-##' (will be replaced by the smallest integer not less than the corresponding fraction), or a list with possible components
-##'
-##' @return Journal metrics data.
-##'
-##' @import dplyr
-##' @export
-##' @author Dominique Makowski and Guangchuang Yu
-get_impactfactor <- function(journals, max.distance = 0.05) {
-    message("The impact factor data is out-of-date and we may remove this function in future release.")
-    get_journal_stats(journals, max.distance, impactfactor)
-}
+
+# ##' Get journal metrics.
+# ##'
+# ##' Get journal metrics (impact factor) for a journal list.
+# ##'
+# ##' @examples
+# ##' \dontrun{
+# ##' library(scholar)
+# ##'
+# ##' id <- get_publications("bg0BZ-QAAAAJ&hl")
+# ##' impact <- get_impactfactor(journals=id$journal, max.distance = 0.1)
+# ##'
+# ##' id <- cbind(id, impact)
+# ##'}
+# ##' @param journals a character list giving the journal list
+# ##' @param max.distance maximum distance allowed for a match between journal and journal list.
+# ##' Expressed either as integer, or as a fraction of the pattern length times the maximal transformation cost
+# ##' (will be replaced by the smallest integer not less than the corresponding fraction), or a list with possible components
+# ##'
+# ##' @return Journal metrics data.
+# ##'
+# ##' @import dplyr
+# ##' @export
+# ##' @author Dominique Makowski and Guangchuang Yu
+# get_impactfactor <- function(journals, max.distance = 0.05) {
+#     message("The impact factor data is out-of-date and we may remove this function in future release.")
+#     get_journal_stats(journals, max.distance, impactfactor)
+# }
 
 
 get_journal_stats <- function(journals, max.distance, source_data, col = "Journal") {
@@ -322,7 +327,7 @@ get_journal_stats <- function(journals, max.distance, source_data, col = "Journa
 ##' id <- cbind(id, impact)
 ##' }
 ##' @param journals a character list giving the journal list
-##' @param max.distance maximum distance allowed for a match bewteen journal and journal list.
+##' @param max.distance maximum distance allowed for a match between journal and journal list.
 ##' Expressed either as integer, or as a fraction of the pattern length times the maximal transformation cost
 ##' (will be replaced by the smallest integer not less than the corresponding fraction), or a list with possible components
 ##'
