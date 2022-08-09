@@ -312,9 +312,15 @@ get_scholar_id <- function(last_name="", first_name="", affiliation = NA) {
   if (is.null(page)) return(NA)
 
   aa <- content(page, as='text')
-  ids <-
-    stringr::str_extract_all(string = aa, pattern = ";user=[[:alnum:]]+[[:punct:]]")
-  
+  ids <- stringr::str_extract_all(
+      string = aa, 
+      pattern = ";user=[0-9a-zA-Z_\\-]+"
+      )
+    #stringr::str_extract_all(string = aa, pattern = ";user=[[:alnum:]]+[[:punct:]]")
+  # maybe pattern = ";user=[^&|\"]+[&|\"]") is more safe
+  # see also https://github.com/jkeirstead/scholar/issues/111
+
+
   if (length(unlist(ids)) == 0) {
     message("No Scholar ID found.")
     return(NA)
@@ -341,7 +347,7 @@ get_scholar_id <- function(last_name="", first_name="", affiliation = NA) {
         warning("No researcher found at the indicated affiliation.")
         return(NA)
       } else {
-        x_profile <- profiles[[which(which_profile != 0)]]
+        x_profile <- profiles[[which(which_profile != 0)[1]]]
       }
     }
   } else {

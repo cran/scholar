@@ -1,7 +1,7 @@
 Package: scholar
 Type: Package
 Title: Analyse Citation Data from Google Scholar
-Version: 0.2.3
+Version: 0.2.4
 Authors@R: c(
     person("Guangchuang", "Yu",   email = "guangchuangyu@gmail.com",   role = c("aut", "cre"), comment = c(ORCID = "0000-0002-6485-8781")),
     person("James", "Keirstead",  email = "james.keirstead@gmail.com", role = "aut"),
@@ -24,11 +24,11 @@ VignetteBuilder: knitr
 License: MIT + file LICENSE
 URL: https://github.com/YuLab-SMU/scholar
 BugReports: https://github.com/YuLab-SMU/scholar/issues
-RoxygenNote: 7.1.2
+RoxygenNote: 7.2.1
 Encoding: UTF-8
 Language: en-GB
 NeedsCompilation: no
-Packaged: 2022-06-23 08:29:40 UTC; ygc
+Packaged: 2022-08-09 07:27:44 UTC; ygc
 Author: Guangchuang Yu [aut, cre] (<https://orcid.org/0000-0002-6485-8781>),
   James Keirstead [aut],
   Gregory Jefferis [aut] (<https://orcid.org/0000-0002-0587-9355>),
@@ -37,4 +37,4 @@ Author: Guangchuang Yu [aut, cre] (<https://orcid.org/0000-0002-6485-8781>),
   Max Czapanskiy [ctb],
   Dominique Makowski [ctb]
 Repository: CRAN
-Date/Publication: 2022-06-23 09:30:02 UTC
+Date/Publication: 2022-08-09 08:20:02 UTC
