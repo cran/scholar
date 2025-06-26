@@ -23,11 +23,11 @@ utils::globalVariables(c("name"))
 ##' 
 ##' Metrics include:
 ##' \itemize{
-##'  \item {total_cites}   {combined citations to all publications}
-##'  \item {h_index}       {the largest number h such that h publications each have at least h citations}
-##'  \item {i10_index}     {the number of publications that each have at least 10 citations}
-##'  \item {available}     {the number of publications that have a version online that can be read for free (though not necessarily reusable under an open access license)}
-##'  \item {not_available} {the number of publications only available behind a paywall}
+##'  \item {total_cites}   combined citations to all publications
+##'  \item {h_index}       the largest number h such that h publications each have at least h citations
+##'  \item {i10_index}     the number of publications that each have at least 10 citations
+##'  \item {available}     the number of publications that have a version online that can be read for free (though not necessarily reusable under an open access license)
+##'  \item {not_available} the number of publications only available behind a paywall
 ##' }
 ##'
 ##' @examples {
@@ -52,7 +52,8 @@ get_profile <- function(id) {
     page <- page %>% read_html()
     tables <- page %>% html_table()
 
-    
+  if (length(tables) == 0) return(NA)
+
   ## The citation stats are in tables[[1]]$tables$stats
   ## but the number of rows seems to vary by OS
   stats <- tables[[1]]
@@ -119,13 +120,16 @@ get_profile <- function(id) {
 ##' @importFrom rvest html_nodes html_text
 ##' @importFrom dplyr "%>%"
 get_citation_history <- function(id) {
-    site <- getOption("scholar_site")
-    url_template <- paste0(site, "/citations?hl=en&user=%s&pagesize=100&view_op=list_works")
-    url <- compose_url(id, url_template)
+  dummy_output <- data.frame(year=1, cites=1)
+  dummy_output <- dummy_output[-1, ]
 
-    ## A better way would actually be to read out the plot of citations
-    page <- get_scholar_resp(url)
-    if (is.null(page)) return(page)
+  site <- getOption("scholar_site")
+  url_template <- paste0(site, "/citations?hl=en&user=%s&pagesize=100&view_op=list_works")
+  url <- compose_url(id, url_template)
+
+  ## A better way would actually be to read out the plot of citations
+  page <- get_scholar_resp(url)
+  if (is.null(page)) return(dummy_output)
 
     page <- page %>% read_html()
     years <- page %>% html_nodes(xpath="//*/span[@class='gsc_g_t']") %>%
@@ -205,14 +209,16 @@ get_num_top_journals <- function(id, journals) {
 ##' Get author rank in authors list.
 ##'
 ##' @examples
+##' \dontrun{
 ##' library(scholar)
 ##'
-##' id <- "bg0BZ-QAAAAJ&hl"
+##' id <- "DO5oG40AAAAJ"
 ##'
 ##' authorlist <- scholar::get_publications(id)$author
 ##' author <- scholar::get_profile(id)$name
 ##'
 ##' author_position(authorlist, author)
+##' }
 ##'
 ##' @param authorlist list of publication authors
 ##' @param author author's name to look for
@@ -332,7 +338,7 @@ get_scholar_id <- function(last_name="", first_name="", affiliation = NA) {
     unique
   
   if (length(ids) > 1) {
-    profiles <- lapply(ids, scholar::get_profile)
+    profiles <- lapply(ids, get_profile)
     if (is.na(affiliation)) {
       x_profile <- profiles[[1]]
       warning("Selecting first out of ", length(profiles), " candidate matches.")
@@ -351,7 +357,7 @@ get_scholar_id <- function(last_name="", first_name="", affiliation = NA) {
       }
     }
   } else {
-    x_profile <- scholar::get_profile(id = ids)
+    x_profile <- get_profile(id = ids)
   }
   return(x_profile$id)
 }

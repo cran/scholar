@@ -1,3 +1,9 @@
+# scholar 0.2.5
+
++ bug fixed in `format_publications()` and fixed R check (2025-06-21, Sat)
++ bug fixed in `predict_h_index()` (2024-01-3, Wed)
++ update vignette and readme with `format_publications()` function (2022-08-09, Tue, @rempsyc, #1)
+
 # scholar 0.2.4
 
 + `get_article_scholar_url()`, `get_publication_abstract()`, `get_publication_data_extended()`, `get_publication_date()` and `get_publication_url()` (2022-08-01, Mon, #113)
