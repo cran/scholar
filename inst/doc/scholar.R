@@ -43,7 +43,7 @@ ggplot(ach, aes(year, cites)) +
 
 ## ----eval=has_scholar---------------------------------------------------------
 # Compare Feynman and Stephen Hawking
-ids <- c('B7vSqZsAAAAJ', 'qj74uXkAAAAJ')
+ids <- c('B7vSqZsAAAAJ', 'DO5oG40AAAAJ')
 
 # Get a data frame comparing the number of citations to their work in
 # a given year
