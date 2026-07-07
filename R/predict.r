@@ -37,9 +37,11 @@
 predict_h_index <- function(id, journals) {
   id <- tidy_id(id)
   n <- get_num_articles(id) # number of articles written
-  h <- get_profile(id)
-  if (is.na(h$h_index)) return(NA)
-  h <- h$h_index
+  profile <- get_profile(id)
+  if (is.null(profile) || (length(profile) == 1 && is.na(profile))) return(NA)
+
+  h <- profile$h_index
+  if (is.na(h)) return(NA)
 
   y <- as.numeric(format(Sys.Date(), "%Y")) - get_oldest_article(id)
   j <- get_num_distinct_journals(id)
@@ -49,6 +51,9 @@ predict_h_index <- function(id, journals) {
   } else {
     q <- get_num_top_journals(id, journals)
   }
+
+  vals <- c(n, h, y, j, q)
+  if (any(is.na(vals)) || any(!is.finite(vals))) return(NA)
 
   ## Regression coefficients, courtesy of Daniel Acuna
   coefs <- c(
@@ -73,10 +78,10 @@ predict_h_index <- function(id, journals) {
   ## Check for sensible values
   standard.warning <- "You're probably not a neuroscientist.  Please read the documentation for information on the limitations of this function."
   
-  if (any(diff(h.vals)<0))
+  if (any(diff(h.vals)<0, na.rm=TRUE))
       warning(paste0("Decreasing h-values predicted. ", standard.warning))
 
-  if (any(h.vals<0))
+  if (any(h.vals<0, na.rm=TRUE))
       warning("Negative h-values predicted. ", standard.warning)
   
   return(data.frame(years_ahead=c(0:10), h_index=h.vals))

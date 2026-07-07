@@ -30,7 +30,7 @@ utils::globalVariables(c("name"))
 ##'  \item {not_available} the number of publications only available behind a paywall
 ##' }
 ##'
-##' @examples {
+##' @examples \donttest{
 ##'    ## Gets profiles of some famous physicists
 ##'    ids <- c("xJaxiEEAAAAJ", "DO5oG40AAAAJ")
 ##'    profiles <- lapply(ids, get_profile)
@@ -49,7 +49,7 @@ get_profile <- function(id) {
     page <- get_scholar_resp(url)
     if (is.null(page)) return(NA)
 
-    page <- page %>% read_html()
+    page <- page %>% read_scholar_html()
     tables <- page %>% html_table()
 
   if (length(tables) == 0) return(NA)
@@ -131,29 +131,40 @@ get_citation_history <- function(id) {
   page <- get_scholar_resp(url)
   if (is.null(page)) return(dummy_output)
 
-    page <- page %>% read_html()
+    page <- page %>% read_scholar_html()
     years <- page %>% html_nodes(xpath="//*/span[@class='gsc_g_t']") %>%
         html_text() %>% as.numeric()
     vals <- page %>% html_nodes(xpath="//*/span[@class='gsc_g_al']") %>%
         html_text() %>% as.numeric()
-    if(length(years)>length(vals)){
-      # Some years don't have citations.
-      # We need to match the citation counts and years
-      # <a href="javascript:void(0)" class="gsc_g_a" style="left:8px;height:5px;z-index:9">\n  <span class="gsc_g_al">2</span>\n</a>
-      style_tags=page %>% html_nodes(css = '.gsc_g_a') %>%
+    style_tags <- page %>% html_nodes(css = '.gsc_g_a') %>%
         html_attr('style')
-      # these z indices seem to be the indices starting with the last year
-      zindices=as.integer(stringr::str_match(style_tags, 'z-index:([0-9]+)')[,2])
-      # empty vector of 0s
-      allvals=integer(length=length(years))
-      # fill in
-      allvals[zindices]=vals
-      # and then reverse
-      vals=rev(allvals)
-    }
-    df <- data.frame(year=years, cites=vals)
+    df <- align_citation_history(years, vals, style_tags)
 
     return(df)
+}
+
+align_citation_history <- function(years, vals, style_tags = character(0)) {
+    years <- years[!is.na(years)]
+    vals <- vals[!is.na(vals)]
+
+    if (length(years) == 0) {
+        return(data.frame(year = numeric(0), cites = numeric(0)))
+    }
+
+    allvals <- integer(length(years))
+    zindices <- as.integer(stringr::str_match(style_tags, 'z-index:([0-9]+)')[, 2])
+    zindices <- zindices[!is.na(zindices)]
+
+    if (length(vals) > 0 && length(zindices) >= length(vals) &&
+        all(zindices[seq_along(vals)] >= 1 & zindices[seq_along(vals)] <= length(years))) {
+        allvals[zindices[seq_along(vals)]] <- vals
+        vals <- rev(allvals)
+    } else {
+        vals <- vals[seq_len(min(length(years), length(vals)))]
+        years <- years[seq_len(length(vals))]
+    }
+
+    data.frame(year = years, cites = vals)
 }
 
 
@@ -172,6 +183,7 @@ get_citation_history <- function(id) {
 ##' @export
 get_num_distinct_journals <- function(id) {
   papers <- get_publications(id)
+  if (!has_publication_data(papers)) return(NA_integer_)
   return(length(unique(papers$journal)))
 }
 
@@ -194,6 +206,7 @@ get_num_distinct_journals <- function(id) {
 ##' @export
 get_num_top_journals <- function(id, journals) {
   papers <- get_publications(id)
+  if (!has_publication_data(papers)) return(NA_integer_)
 
   if (missing(journals)) {
     journals <-c("Nature", "Science", "Nature Neuroscience",
@@ -262,10 +275,10 @@ author_position <- function(authorlist, author){
           percentage <- (position-1)/(current_n-1)
         }
       } else{
-        pectentage <- NA
+        percentage <- NA
       }
     } else{
-      pectentage <- NA
+      percentage <- NA
     }
 
 
@@ -329,8 +342,8 @@ get_scholar_id <- function(last_name="", first_name="", affiliation = NA) {
     url <- paste0(site, '/citations?view_op=search_authors&mauthors=', mval, '&hl=en&oi=ao')
     page <- get_scholar_resp(url)
     if (is.null(page)) next
-    aa <- httr::content(page, as='text')
-    doc <- xml2::read_html(aa)
+    aa <- scholar_response_text(page)
+    doc <- read_scholar_html(page)
     hrefs <- rvest::html_nodes(doc, css = ".gs_ai_name a") |> rvest::html_attr("href")
     if (length(hrefs) == 0) {
       hrefs <- rvest::html_nodes(doc, xpath = "//a[contains(@href,'citations')][contains(@href,'user=')]") |> rvest::html_attr("href")
@@ -397,5 +410,141 @@ get_scholar_id <- function(last_name="", first_name="", affiliation = NA) {
     x_profile <- get_profile(id = ids)
   }
   return(x_profile$id)
+}
+
+#' Search Google Scholar IDs by author name
+#'
+#' Searches Google Scholar author results and returns matching author IDs.
+#'
+#' @param name author search query
+#' @param max_pages maximum number of search result pages to fetch
+#' @param delay number of seconds to wait between result pages
+#' @return a data frame with columns \code{id}, \code{name}, \code{affiliation},
+#' \code{email}, \code{interests}, and \code{url}
+#' @export
+#'
+#' @examples
+#' \donttest{
+#' search_scholar_ids("hao xu", max_pages = 1)
+#' }
+search_scholar_ids <- function(name, max_pages = Inf, delay = 0) {
+  if (!is.character(name) || length(name) != 1 || is.na(name) || !nzchar(name)) {
+    stop("name must be a non-empty character string")
+  }
+  if (!is.numeric(max_pages) || length(max_pages) != 1 ||
+      is.na(max_pages) || max_pages <= 0) {
+    stop("max_pages must be a positive number")
+  }
+  if (!is.numeric(delay) || length(delay) != 1 ||
+      is.na(delay) || !is.finite(delay) || delay < 0) {
+    stop("delay must be a non-negative number")
+  }
+
+  site <- getOption("scholar_site")
+  query <- gsub("%20", "+", utils::URLencode(name, reserved = TRUE), fixed = TRUE)
+  url <- paste0(site, "/citations?view_op=search_authors&mauthors=",
+                query, "&hl=en&oi=ao")
+
+  pages <- 0
+  seen_urls <- character(0)
+  out <- list()
+  repeat {
+    if (url %in% seen_urls) break
+    seen_urls <- c(seen_urls, url)
+
+    page <- get_scholar_resp(url)
+    if (is.null(page)) break
+
+    doc <- read_scholar_html(page)
+    parsed <- parse_scholar_id_search(doc, site)
+    if (nrow(parsed$results) > 0) {
+      out[[length(out) + 1]] <- parsed$results
+    }
+
+    pages <- pages + 1
+    if (pages >= max_pages || is.na(parsed$next_url)) break
+    if (delay > 0) Sys.sleep(delay)
+    url <- parsed$next_url
+  }
+
+  if (length(out) == 0) {
+    return(empty_scholar_id_search())
+  }
+
+  res <- do.call("rbind", out)
+  res[!duplicated(res$id), , drop = FALSE]
+}
+
+parse_scholar_id_search <- function(doc, site = getOption("scholar_site")) {
+  authors <- rvest::html_nodes(doc, css = ".gs_ai_chpr")
+  if (length(authors) == 0) {
+    authors <- rvest::html_nodes(doc, xpath = "//div[contains(@class,'gs_ai')]")
+  }
+
+  results <- lapply(authors, function(author) {
+    link <- rvest::html_node(author, css = ".gs_ai_name a")
+    href <- rvest::html_attr(link, "href")
+    id <- grab_id(href)
+    if (is.na(id) || !nzchar(id)) return(NULL)
+
+    data.frame(
+      id = id,
+      name = html_text_or_empty(link),
+      affiliation = html_text_or_empty(rvest::html_node(author, css = ".gs_ai_aff")),
+      email = html_text_or_empty(rvest::html_node(author, css = ".gs_ai_eml")),
+      interests = paste(rvest::html_nodes(author, css = ".gs_ai_one_int") %>%
+                          rvest::html_text(), collapse = "; "),
+      url = absolute_scholar_url(href, site),
+      stringsAsFactors = FALSE
+    )
+  })
+  results <- Filter(Negate(is.null), results)
+  results <- if (length(results) == 0) empty_scholar_id_search() else do.call("rbind", results)
+
+  onclick <- rvest::html_nodes(doc, xpath = "//button[@aria-label='Next']") %>%
+    rvest::html_attr("onclick")
+  onclick <- onclick[!is.na(onclick) & nzchar(onclick)]
+  next_href <- NA_character_
+  if (length(onclick) > 0) {
+    next_href <- sub(".*window.location='([^']+)'.*", "\\1", onclick[1])
+    if (identical(next_href, onclick[1])) next_href <- NA_character_
+  }
+  if (is.na(next_href)) {
+    hrefs <- rvest::html_nodes(doc, xpath = "//a[contains(@href,'after_author')]") %>%
+      rvest::html_attr("href")
+    hrefs <- hrefs[!is.na(hrefs) & nzchar(hrefs)]
+    next_href <- if (length(hrefs) == 0) NA_character_ else hrefs[1]
+  }
+
+  next_url <- if (!is.na(next_href) && nzchar(next_href) && grepl("after_author|astart", next_href)) {
+    absolute_scholar_url(next_href, site)
+  } else {
+    NA_character_
+  }
+
+  list(results = results, next_url = next_url)
+}
+
+empty_scholar_id_search <- function() {
+  data.frame(
+    id = character(),
+    name = character(),
+    affiliation = character(),
+    email = character(),
+    interests = character(),
+    url = character(),
+    stringsAsFactors = FALSE
+  )
+}
+
+html_text_or_empty <- function(node) {
+  if (length(node) == 0) return("")
+  rvest::html_text(node)
+}
+
+absolute_scholar_url <- function(href, site = getOption("scholar_site")) {
+  if (is.na(href) || !nzchar(href)) return(NA_character_)
+  if (grepl("^https?://", href)) return(href)
+  paste0(site, href)
 }
 

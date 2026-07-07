@@ -83,7 +83,7 @@ get_publications <- function(id, cstart = 0, cstop = Inf, pagesize=100, flush=FA
         page <- get_scholar_resp(url)
         if (is.null(page)) return(NA)
 
-        page <- page %>% read_html()
+        page <- page %>% read_scholar_html()
         cites <- page %>% html_nodes(xpath="//tr[@class='gsc_a_tr']")
 
         title <- cites %>% html_nodes(".gsc_a_at") %>% html_text()
@@ -91,9 +91,8 @@ get_publications <- function(id, cstart = 0, cstop = Inf, pagesize=100, flush=FA
             html_attr("href") %>% str_extract(":.*$") %>% str_sub(start=2)
         doc_id <- cites %>% html_nodes(".gsc_a_ac") %>% html_attr("href") %>%
             str_extract("cites=.*$") %>% str_sub(start=7)
-        cited_by <- suppressWarnings(cites %>% html_nodes(".gsc_a_ac") %>%
-                                     html_text() %>%
-                                     as.numeric(.) %>% replace(is.na(.), 0))
+        cited_by <- cites %>% html_nodes(".gsc_a_ac") %>%
+            parse_citation_counts()
         year <- cites %>% html_nodes(".gsc_a_y") %>% html_text() %>%
             as.numeric()
         authors <- cites %>% html_nodes("td .gs_gray") %>% html_text() %>%
@@ -145,6 +144,110 @@ get_publications <- function(id, cstart = 0, cstop = Inf, pagesize=100, flush=FA
     return(data)
 }
 
+##' Gets publications with complete author lists
+##'
+##' Gets a scholar's publications and fills truncated author lists by calling
+##' \code{\link{get_complete_authors}} only for publications whose author field
+##' contains \code{...}.
+##'
+##' @param id a character string specifying the Google Scholar ID.
+##' @param delay average delay between requests for complete author lists. See
+##' \code{\link{get_complete_authors}}.
+##' @param initials if TRUE, first and middle names in completed author lists
+##' will be abbreviated. See \code{\link{get_complete_authors}}.
+##' @param ... additional arguments passed to \code{\link{get_publications}}.
+##' @return a data frame listing the publications and their details, with
+##' truncated author lists replaced where possible.
+##' @export
+get_publications_all_authors <- function(id, delay = 0.8, initials = TRUE, ...) {
+    publications <- get_publications(id, ...)
+    fill_publication_authors(publications, id, delay = delay, initials = initials)
+}
+
+fill_publication_authors <- function(publications, id, delay = 0.8, initials = TRUE,
+                                     author_fetcher = get_complete_authors) {
+    if (!has_publication_data(publications) ||
+        !"author" %in% names(publications) ||
+        !"pubid" %in% names(publications)) {
+        return(publications)
+    }
+
+    truncated <- !is.na(publications$author) & grepl("\\.\\.\\.", publications$author)
+    if (!any(truncated)) return(publications)
+
+    complete <- vapply(publications$pubid[truncated], function(pubid) {
+        author_fetcher(id, pubid, delay = delay, initials = initials)
+    }, FUN.VALUE = character(1))
+    replace <- !is.na(complete) & nzchar(complete)
+    idx <- which(truncated)[replace]
+    publications$author[idx] <- complete[replace]
+
+    publications
+}
+
+##' Calculate citation metrics from publication data
+##'
+##' Calculates common citation metrics from a publication data frame, such as
+##' the result returned by \code{\link{get_publications}}.
+##'
+##' @param publications a data frame containing a numeric \code{cites} column
+##' @return a data frame with h-index, g-index, i10-index, i50-index, i100-index,
+##' total citations, and publication count
+##' @export
+get_publication_metrics <- function(publications) {
+    if (!has_publication_data(publications) || !"cites" %in% names(publications)) {
+        return(empty_publication_metrics())
+    }
+
+    cites <- suppressWarnings(as.numeric(publications$cites))
+    cites[is.na(cites)] <- 0
+    cites <- sort(cites, decreasing = TRUE)
+
+    ranks <- seq_along(cites)
+    h_index <- sum(cites >= ranks)
+    g_hits <- which(cumsum(cites) >= ranks^2)
+    g_index <- if (length(g_hits) == 0) 0L else max(g_hits)
+
+    data.frame(
+        total_cites = sum(cites),
+        h_index = h_index,
+        g_index = g_index,
+        i10_index = sum(cites >= 10),
+        i50_index = sum(cites >= 50),
+        i100_index = sum(cites >= 100),
+        num_publications = length(cites)
+    )
+}
+
+##' Calculate citation metrics for a scholar
+##'
+##' Fetches a scholar's publications with \code{\link{get_publications}} and
+##' calculates common citation metrics.
+##'
+##' @param id a character string specifying the Google Scholar ID
+##' @param pagesize an integer specifying the number of articles to fetch in one
+##'   batch. See \code{\link{get_publications}}.
+##' @param flush should the publication cache be flushed?
+##' @return a data frame with h-index, g-index, i10-index, i50-index, i100-index,
+##' total citations, and publication count
+##' @export
+get_scholar_metrics <- function(id, pagesize = 100, flush = FALSE) {
+    pubs <- get_publications(id, pagesize = pagesize, flush = flush)
+    get_publication_metrics(pubs)
+}
+
+empty_publication_metrics <- function() {
+    data.frame(
+        total_cites = NA_real_,
+        h_index = NA_integer_,
+        g_index = NA_integer_,
+        i10_index = NA_integer_,
+        i50_index = NA_integer_,
+        i100_index = NA_integer_,
+        num_publications = NA_integer_
+    )
+}
+
 ##' Gets the citation history of a single article
 ##'
 ##' @param id a character string giving the id of the scholar
@@ -171,7 +274,7 @@ get_article_cite_history <- function (id, article) {
     if (is.null(res)) return(dummy_output)
 
     httr::stop_for_status(res, "get user id / article information")
-    doc <- read_html(res)
+    doc <- read_scholar_html(res)
 
     ## Inspect the bar chart to retrieve the citation values and years
     years <- doc %>%
@@ -208,6 +311,7 @@ get_article_cite_history <- function (id, article) {
 ##' @export
 get_num_articles <- function(id) {
     papers <- get_publications(id)
+    if (!has_publication_data(papers)) return(NA_integer_)
     return(nrow(papers))
 }
 
@@ -220,7 +324,12 @@ get_num_articles <- function(id) {
 ##' @export
 get_oldest_article <- function(id) {
     papers <- get_publications(id)
+    if (!has_publication_data(papers) || all(is.na(papers$year))) return(NA_real_)
     return(min(papers$year, na.rm=TRUE))
+}
+
+has_publication_data <- function(papers) {
+    is.data.frame(papers) && nrow(papers) > 0
 }
 
 
@@ -317,7 +426,7 @@ get_journal_stats <- function(journals, max.distance, source_data, col = "Journa
 
 ##' Get journal ranking.
 ##'
-##' Get journal ranking for a journal list.
+##' Get SCImago journal ranking data.
 ##'
 ##' @examples
 ##' \dontrun{
@@ -328,18 +437,60 @@ get_journal_stats <- function(journals, max.distance, source_data, col = "Journa
 ##'
 ##' id <- cbind(id, impact)
 ##' }
-##' @param journals a character list giving the journal list
+##' @param journals a character list giving the journal list. If missing, the
+##' full SCImago journal ranking table is returned.
 ##' @param max.distance maximum distance allowed for a match between journal and journal list.
 ##' Expressed either as integer, or as a fraction of the pattern length times the maximal transformation cost
 ##' (will be replaced by the smallest integer not less than the corresponding fraction), or a list with possible components
 ##'
 ##' @return Journal ranking data.
 ##'
-##' @import dplyr
 ##' @export
 ##' @author Dominique Makowski and Guangchuang Yu
 get_journalrank <- function(journals, max.distance = 0.05) {
-    get_journal_stats(journals, max.distance, journalrankings)
+    myjournalrankings <- download_scimagojr_rankings()
+    if (missing(journals)) {
+        return(myjournalrankings)
+    }
+    get_journal_stats(journals, max.distance, myjournalrankings, col = "Title")
+}
+
+download_scimagojr_rankings <- function(url = "https://www.scimagojr.com/journalrank.php?out=xls") {
+    resp <- httr::GET(
+        url,
+        httr::user_agent(paste(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "AppleWebKit/537.36 (KHTML, like Gecko)",
+            "Chrome/126.0 Safari/537.36"
+        )),
+        httr::add_headers(
+            Accept = "text/csv,application/vnd.ms-excel,*/*",
+            Referer = "https://www.scimagojr.com/journalrank.php"
+        )
+    )
+    httr::stop_for_status(resp, "download SCImago journal rankings")
+
+    txt <- httr::content(resp, as = "text", encoding = "UTF-8")
+    con <- textConnection(txt)
+    on.exit(close(con), add = TRUE)
+    utils::read.csv2(con, stringsAsFactors = FALSE, check.names = FALSE)
+}
+
+
+parse_citation_counts <- function(nodes) {
+    text <- nodes %>% rvest::html_text2()
+    text <- gsub("\u00a0", " ", text)
+    text <- gsub("[\u0335\u0336\u0338]", "", text)
+    hits <- gregexpr("[0-9][0-9,]*", text)
+    cites <- vapply(seq_along(text), function(i) {
+        match <- regmatches(text[i], hits[i])[[1]]
+        if (identical(match, character(0))) {
+            return(0)
+        }
+        as.numeric(gsub(",", "", match[length(match)]))
+    }, numeric(1))
+    cites[is.na(cites)] <- 0
+    cites
 }
 
 
@@ -385,7 +536,7 @@ get_publication_abstract <- function(id, pub_id, flush = FALSE) {
     page <- get_scholar_resp(url)
     if (is.null(page)) return(NA)
 
-    page <- page %>% rvest::read_html()
+    page <- page %>% read_scholar_html()
 
     data <- page %>% rvest::html_nodes(xpath="//div[@class='gsh_csp']") %>% rvest::html_text()
     #url <- page %>% rvest::html_nodes(xpath="//a[@class='gsc_oci_title_link']") %>% rvest::html_attr("href")
@@ -437,7 +588,7 @@ get_publication_url <- function(id, pub_id, flush = FALSE) {
     page <- get_scholar_resp(url)
     if (is.null(page)) return(NA)
 
-    page <- page %>% rvest::read_html()
+    page <- page %>% read_scholar_html()
 
     data <- page %>% rvest::html_nodes(xpath="//a[@class='gsc_oci_title_link']") %>% rvest::html_attr("href")
 
@@ -516,7 +667,7 @@ get_publication_date <- function(id, pub_id, flush = FALSE) {
     page <- get_scholar_resp(url)
     if (is.null(page)) return(NA)
 
-    page <- page %>% rvest::read_html()
+    page <- page %>% read_scholar_html()
 
     fields <- page %>% rvest::html_nodes(xpath="//div[@class='gsc_oci_field']") %>% rvest::html_text()
     field_num <- stringr::str_which(fields, "Publication date")
@@ -574,7 +725,7 @@ get_publication_data_extended <- function(id, pub_id, flush = FALSE) {
     page <- get_scholar_resp(url)
     if (is.null(page)) return(NA)
 
-    page <- page %>% rvest::read_html()
+    page <- page %>% read_scholar_html()
 
     fields <- page %>% rvest::html_nodes(xpath="//div[@class='gsc_oci_field']") %>% rvest::html_text()
     field_num <- stringr::str_which(fields, "Publication date")

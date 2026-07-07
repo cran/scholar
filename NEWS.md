@@ -1,3 +1,19 @@
+# scholar 1.0.0
+
++ convert the package vignette from R Markdown to Quarto and expand the feature overview (2026-07-07, Tue)
++ fix `author_position()` normalized-position typo for missing author positions (2026-07-07, Tue, #105)
++ retry transient Google Scholar 404 responses before returning unavailable data (2026-07-07, Tue, #108)
++ fix `get_complete_authors()` URL construction and tolerate Scholar IDs with trailing query parameters (2026-07-07, Tue, #117)
++ use Google Scholar's full colleagues list when retrieving coauthors to avoid the profile sidebar limit (2026-07-07, Tue, #120)
++ add `get_publications_all_authors()` to fill truncated publication author lists only when needed (2026-07-07, Tue, #122)
++ add `search_scholar_ids()` to return all author IDs from paginated Google Scholar author search results (2026-07-07, Tue, #88)
++ add `get_publication_metrics()` and `get_scholar_metrics()` for h-index, g-index, i10, i50, and i100 metrics (2026-07-07, Tue)
++ make citation history parsing tolerate mismatched Google Scholar chart labels and values (2026-07-07, Tue)
++ make `predict_h_index()` return `NA` instead of erroring when publication metrics are unavailable (2026-07-07, Tue)
++ improve publication citation count parsing for formatted or struck-through Google Scholar values (2026-07-07, Tue)
++ restore `get_journalrank()` with browser-like SCImago CSV download to avoid HTTP 403 errors (2026-07-07, Tue)
++ fix Google Scholar HTML encoding conversion to avoid example failures when pages contain Latin-1 characters (2026-07-07, Tue)
+
 # scholar 0.2.6
 
 + fix `get_publications(sortby='year')` issue (2026-02-26, Thu, #5)
@@ -17,7 +33,7 @@
 
 + `get_article_scholar_url()`, `get_publication_abstract()`, `get_publication_data_extended()`, `get_publication_date()` and `get_publication_url()` (2022-08-01, Mon, #113)
 + fixed bug in parsing ID with '-' character in `get_scholar_id()` (2022-07-26, Tue)
-+ fixed duplicated profiles and update regexpr to extract ID in `get_scholar_id()` (2022-06-25, Sta, #111, #112)
++ fixed duplicated profiles and update regexpr to extract ID in `get_scholar_id()` (2022-06-25, Sat, #111, #112)
 
 # scholar 0.2.3
 

@@ -9,8 +9,9 @@
 ##'  library(scholar)
 ##'  format_publications("DO5oG40AAAAJ")    
 ##' }
-##' @return a vector of formated publications
+##' @return a vector of formatted publications
 ##' @importFrom rlang .data
+##' @importFrom dplyr mutate
 ##' @export
 ##' @author R Thériault and modified by Guangchuang Yu
 format_publications <- function(scholar.profile, author.name = NULL) {
@@ -27,13 +28,13 @@ format_publications <- function(scholar.profile, author.name = NULL) {
   author.name2 <- swap_initials(author.name)
   
   res <- pubs |> 
-    arrange(desc(.data$year)) |>
-    mutate(journal = paste0("*", .data$journal, "*"),
+    dplyr::arrange(dplyr::desc(.data$year)) |>
+    dplyr::mutate(journal = paste0("*", .data$journal, "*"),
            Publications = paste0(.data$author, " (", .data$year, "). ", 
                                  .data$title, ". ", .data$journal, ". ", 
                                  .data$number)
     ) |>
-    pull(.data$Publications)
+    dplyr::pull(.data$Publications)
 
     if (is.null(author.name2)) return(res)
     gsub(author.name2, paste0("**", author.name2, "**"), res)
