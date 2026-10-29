@@ -60,6 +60,23 @@ tidy_id("B7vSqZsAAAAJ&hl=en")
 
 
 
+## ----citing-articles, eval=FALSE----------------------------------------------
+# pubs <- get_publications(id)
+# top <- pubs[which.max(pubs$cites), ]
+# get_citing_articles(id, top$pubid, publications = pubs, max_pages = 2)
+
+
+## ----h-index-history, eval=FALSE----------------------------------------------
+# history <- get_h_index_history(id, delay = 1)
+# head(history)
+
+
+## ----h-index-history-plot, eval=FALSE-----------------------------------------
+# ggplot(history, aes(year, h_index)) +
+#   geom_step(direction = "hv") +
+#   labs(x = NULL, y = "h-index",
+#        title = "How the h-index accumulated",
+#        subtitle = "each step is a year in which another paper reached the threshold")
 
 
 
@@ -78,6 +95,19 @@ tidy_id("B7vSqZsAAAAJ&hl=en")
 
 
 
+
+
+## ----journalrank-deprecated, error=TRUE---------------------------------------
+try({
+get_journalrank(c("Nature", "Science"))
+})
+
+
+## ----openalex-sources, eval=FALSE---------------------------------------------
+# openalex <- jsonlite::fromJSON(
+#   "https://api.openalex.org/sources?search=Nature&per-page=1")
+# openalex$results[, c("display_name", "works_count", "cited_by_count")]
+# openalex$results$summary_stats
 
 
 
@@ -100,6 +130,13 @@ tidy_id("B7vSqZsAAAAJ&hl=en")
 ## ----flush-cache, eval=FALSE--------------------------------------------------
 # get_publications(id, flush = TRUE)
 # get_scholar_metrics(id, flush = TRUE)
+
+
+## ----refused, eval=FALSE------------------------------------------------------
+# get_profile("B7vSqZsAAAAJ")
+# #> Warning: Google Scholar returned a captcha page that needs JavaScript, so the
+# #>   response contains no data. ... Carry the session of a browser that opens the
+# #>   page with set_scholar_cookie(), ... or run it from a workstation.
 
 
 ## ----reusable-publications, eval=FALSE----------------------------------------

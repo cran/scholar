@@ -15,6 +15,105 @@
 #'   with Google Scholar, we recommend that you use the
 #'   \code{\link{get_scholar_resp}} function to carry out the query.
 #'
+#'   Some endpoints, author search and the cited-by list among them, now want a
+#'   session that only a browser has. \code{\link{set_scholar_cookie}} hands
+#'   that session to the package: either paste the \code{Cookie} value of a
+#'   browser that can open the page, or point it at a file exported from one.
+#'   Prefer the file, and read it from an environment variable rather than
+#'   writing it into a script, because a session is a credential and an option
+#'   value ends up in the command history. The cookies that matter, \code{NID},
+#'   \code{_Secure-ENID}, \code{GSP} and \code{SOCS}, are \code{HttpOnly},
+#'   so a browser will not reveal them to a script or a copy button: take them
+#'   from the developer tools under Application, or with an extension that
+#'   exports a cookie file. Google publishes their lifetimes as six months for
+#'   \code{NID} and thirteen for \code{_Secure-ENID} and \code{SOCS}, counted
+#'   from last use, and ends a session sooner when it looks automated, so
+#'   expect to export it again.
+#'
+#'   The session is sent as a cookie rather than as a header of that name, so it
+#'   is merged with what Google sets on the connection and is not dropped when a
+#'   request is redirected to a sign-in host. It is sent only to a Google host:
+#'   a mirror that is not Google's is refused the session and told so, because
+#'   handing a Google credential to somebody else's server is not something a
+#'   package should do quietly.
+#'
+#'   None of this is a sanctioned API. Scholar has no API and no OAuth scope,
+#'   and Google's terms forbid automated access in ways its machine-readable
+#'   instructions disallow; reusing your own session is personal use, not a
+#'   distribution channel, and it puts that account's Google access at risk of a
+#'   challenge or suspension. Use a dedicated account if you must, keep the
+#'   session out of logs and version control, and for anything at scale use
+#'   OpenAlex (\url{https://api.openalex.org}), which is meant for this and
+#'   needs no session at all.
+#'
+#' @section Requests are refused, rate limited or redirected: Google Scholar has
+#'   no public API and guards the website against automated clients, so a
+#'   request can fail for reasons that have nothing to do with the ID you
+#'   passed. The package sends browser-like headers on every request and backs
+#'   off before retrying, but three outcomes are still worth recognising:
+#'
+#'   \itemize{
+#'     \item HTTP 403 on the search pages. Scholar rejects a client whose
+#'       \code{User-Agent} names a library, which is why the same query works
+#'       in a browser and not in a script.
+#'     \item A redirect to a sign-in or captcha page, reported as \emph{Google
+#'       Scholar redirected to a Google sign-in page} or \emph{answered with
+#'       its captcha page}. Some endpoints, author search among them, now sit
+#'       behind a Google login, and a shared or data-centre IP (a hosted shiny
+#'       app, a CI runner) is challenged more often than a workstation. These
+#'       requests are not retried, because retrying cannot change the answer.
+#'     \item HTTP 429, meaning this IP has asked too often. The package waits,
+#'       using the \code{Retry-After} header when Scholar supplies it and
+#'       otherwise an exponentially growing delay, and gives up with a warning
+#'       when Google asks for longer than the budget allows.
+#'   }
+#'
+#'   When a function returns \code{NA} or an empty table, read the warning: it
+#'   names the reason. To keep Scholar happy, request less (set
+#'   \code{scholar_request_delay}), fetch from a residential connection, or
+#'   point the package at a mirror with \code{\link{set_scholar_mirror}}.
+#'
+#' @section Configuration: the following options are read on every request, and
+#'   each falls back to the environment variable of the same name in upper
+#'   case, which is what to set on a server or in CI.
+#'
+#'   \itemize{
+#'     \item \code{scholar_site}: base URL of Google Scholar or a compatible
+#'       mirror, see \code{\link{set_scholar_mirror}}.
+#'     \item \code{scholar_user_agent} (\code{SCHOLAR_USER_AGENT}): the
+#'       \code{User-Agent} sent. Defaults to a desktop Chrome string.
+#'     \item \code{scholar_accept_language} (\code{SCHOLAR_ACCEPT_LANGUAGE}):
+#'       sent as \code{Accept-Language}. Defaults to \code{en-US,en;q=0.9};
+#'       Scholar serves different markup per language, so change it only if you
+#'       know why.
+#'     \item \code{scholar_request_delay} (\code{SCHOLAR_REQUEST_DELAY}):
+#'       seconds to wait before every request. Default \code{0}. Set this in
+#'       loops over many publications, where one profile fetch follows another.
+#'     \item \code{scholar_retry_delay} and \code{scholar_retry_max_delay}: the
+#'       first wait and the ceiling for the exponentially growing wait before a
+#'       retry. Defaults to 1 and 30 seconds.
+#'     \item \code{scholar_retry_budget} (\code{SCHOLAR_RETRY_BUDGET}): how many
+#'       seconds one process may spend waiting for Scholar in total, across every
+#'       request. Default 60. Past that a rate-limited request is abandoned at
+#'       once, since a CI job that keeps hammering a refusing server only extends
+#'       its own lockout. Reset it with \code{options(scholar_wait_used = 0)}.
+#'     \item \code{scholar_cookie} (\code{SCHOLAR_COOKIE}) and
+#'       \code{scholar_cookie_file} (\code{SCHOLAR_COOKIE_FILE}): the session to
+#'       present, see \code{\link{set_scholar_cookie}}. Entries from the option
+#'       win over entries of the same name in the file. Prefer the environment
+#'       variable, since an option value can end up in the command history.
+#'     \item \code{scholar_openalex_mailto} (\code{SCHOLAR_OPENALEX_MAILTO}):
+#'       an address to identify yourself with when querying OpenAlex, which
+#'       routes the request to their polite pool.
+#'     \item \code{scholar_timeout} (\code{SCHOLAR_TIMEOUT}): seconds a single
+#'       request may take before it is abandoned. Default 30.
+#'     \item \code{scholar_degraded}: set to \code{FALSE} to stop the notice
+#'       that author search is being refused by Google, which otherwise appears
+#'       once per session.
+#'     \item \code{scholar_call_home} and \code{scholar_handle}: whether to seed
+#'       a session, and the handle holding its cookies. Both are managed for you.
+#'   }
+#'
 #'
 #' @source The package reads data from \url{https://scholar.google.com}.  Dates
 #'   and citation counts are estimated and are determined automatically by a

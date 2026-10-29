@@ -17,11 +17,15 @@ get_scholar_id(last_name = "", first_name = "", affiliation = NA)
 Google Scholar ID as a character string.
 }
 \description{
-Search for Google Scholar ID by name and affiliation
+Deprecated for anonymous use: Google now answers author search
+  with a sign-in page, so this works only where a browser session has been
+  supplied with \code{\link{set_scholar_cookie}}, or through a mirror that
+  serves the endpoint. \code{\link{search_openalex_authors}} does the same
+  job with no session at all and is the route to prefer for new code.
 }
 \examples{
-get_scholar_id(first_name = "kristopher", last_name = "mcneill")
 \donttest{
+get_scholar_id(first_name = "kristopher", last_name = "mcneill")
 get_scholar_id(first_name = "michael", last_name = "sander", affiliation = NA)
 get_scholar_id(first_name = "michael", last_name = "sander", affiliation = "eth")
 get_scholar_id(first_name = "michael", last_name = "sander", affiliation = "ETH Zurich")

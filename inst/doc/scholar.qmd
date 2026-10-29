@@ -83,7 +83,12 @@ tidy_id("https://scholar.google.com/citations?user=B7vSqZsAAAAJ&hl=en")
 tidy_id("B7vSqZsAAAAJ&hl=en")
 ```
 
-You can search for one matching ID with `get_scholar_id()`.
+Author search is the endpoint Google has put behind a login, so
+`get_scholar_id()` and `search_scholar_ids()` can come back empty on a machine
+where a browser shows the profile plainly; the package warns when the result is
+a refusal rather than an absence of matches. If you have the profile URL, take
+the ID from it. If you are matching authors programmatically, OpenAlex is the
+sanctioned source.
 
 ```{r get-scholar-id, eval=run_examples}
 get_scholar_id(first_name = "Richard", last_name = "Feynman")
@@ -183,6 +188,44 @@ ggplot(article_history, aes(year, cites)) +
   labs(x = "Year", y = "Citations")
 ```
 
+`get_citing_articles()` goes one step further than a citation count and lists
+the works citing a publication, with their venue and year, which is what you
+need to split a citation curve by community or to measure an autocitation rate.
+Google caps the list the same way the "cited by" link does, and guards it more
+closely than a profile page, so expect it to be refused from a server.
+
+```{r citing-articles, eval=FALSE}
+pubs <- get_publications(id)
+top <- pubs[which.max(pubs$cites), ]
+get_citing_articles(id, top$pubid, publications = pubs, max_pages = 2)
+```
+
+# How the h-index Grew
+
+`get_profile()` reports one h-index at one moment. `get_h_index_history()`
+rebuilds it year by year from the citation history of each publication, which is
+the difference between knowing someone is at h-index 39 and knowing whether they
+got there in five years or thirty.
+
+```{r h-index-history, eval=FALSE}
+history <- get_h_index_history(id, delay = 1)
+head(history)
+```
+
+```{r h-index-history-plot, eval=FALSE}
+ggplot(history, aes(year, h_index)) +
+  geom_step(direction = "hv") +
+  labs(x = NULL, y = "h-index",
+       title = "How the h-index accumulated",
+       subtitle = "each step is a year in which another paper reached the threshold")
+```
+
+The cost is one request per cited publication, so the histories are cached with
+`R.cache` and a second call for the same profile makes no requests. Pass
+`flush = TRUE` to refresh. Publications with no citations are skipped, since they
+cannot enter an h-index in any year, and the curve is only as long as the years
+Google reports per publication.
+
 # Citation Metrics
 
 `get_publication_metrics()` calculates metrics from a publication data frame.
@@ -278,16 +321,30 @@ if (nrow(coauthor_network) > 1) {
 
 # Journal Rankings
 
-`get_journalrank()` downloads SCImago journal ranking data. With no `journals`
-argument it returns the full table. With a character vector it matches journal
-names to SCImago rows using approximate matching.
+`get_journalrank()` is deprecated and fetches nothing. SCImago has served its
+ranking page behind a JavaScript challenge since late 2025, so a script is
+answered with HTTP 403 and cannot read the table, and the table carries no
+published licence. The function remains so that old code fails with an
+explanation rather than a stack trace:
 
-```{r journalrank, eval=run_examples}
-jr <- get_journalrank()
-head(jr, 3)
-
+```{r journalrank-deprecated, error=TRUE}
 get_journalrank(c("Nature", "Science"))
 ```
+
+For journal metrics, use OpenAlex, which is openly licensed, built for
+programmatic use, and needs no session or scraping. It publishes the h-index,
+i10-index, work and citation counts, and the ISSNs of a journal:
+
+```{r openalex-sources, eval=FALSE}
+openalex <- jsonlite::fromJSON(
+  "https://api.openalex.org/sources?search=Nature&per-page=1")
+openalex$results[, c("display_name", "works_count", "cited_by_count")]
+openalex$results$summary_stats
+```
+
+If you need SCImago's SJR quartiles specifically, save the table by hand in a
+browser from `https://www.scimagojr.com/journalrank.php` and read it with
+`utils::read.csv2()` — the separators are semicolons.
 
 # Predicting Future h-index
 
@@ -349,6 +406,47 @@ to it when you need fresh data.
 get_publications(id, flush = TRUE)
 get_scholar_metrics(id, flush = TRUE)
 ```
+
+## When Scholar refuses: servers, CI, and hosted apps
+
+Google guards Scholar against automated clients, and how it responds depends on
+where the request comes from. On your machine a profile page opens; on
+shinyapps.io, a GitLab runner or a GitHub Actions job the same request can come
+back as a sign-in redirect, a captcha, or HTTP 403. The package no longer
+describes that as a bad ID: `get_scholar_resp()` inspects the address the request
+finally landed on and the body it carries, then warns with the reason.
+
+```{r refused, eval=FALSE}
+get_profile("B7vSqZsAAAAJ")
+#> Warning: Google Scholar returned a captcha page that needs JavaScript, so the
+#>   response contains no data. ... Carry the session of a browser that opens the
+#>   page with set_scholar_cookie(), ... or run it from a workstation.
+```
+
+Four ways out, in the order they are worth trying:
+
+1. **Fetch outside the app.** Pull the data where a person browses, save it, and
+   have the deployed app read the saved table. Scholar data changes slowly and
+   an app rarely needs a live scrape per visit.
+2. **Pace the requests.** `options(scholar_request_delay = 1)` (or
+   `SCHOLAR_REQUEST_DELAY=1` in CI) puts a pause in front of every request, and
+   rate limits already back off geometrically within
+   `scholar_retry_max_delay`. Loops over many publications are what get an IP
+   flagged.
+3. **Present a session.** `set_scholar_cookie(file = "cookies.txt")`, or
+   `SCHOLAR_COOKIE_FILE` on a server, reuses the session of a browser that opens
+   the page. This is what author search now requires. A session is a credential:
+   keep it out of the command history and out of version control, and note that
+   the package sends it only to Google hosts, never to a mirror.
+4. **Use another source.** For anything at scale, OpenAlex
+   (`https://api.openalex.org`) is sanctioned, needs no session, and returns
+   h-index and citation counts alongside the works.
+
+The settings the package reads, each with an environment variable of the same
+name in upper case: `scholar_site`, `scholar_user_agent`,
+`scholar_accept_language`, `scholar_request_delay`, `scholar_retry_delay`,
+`scholar_retry_max_delay`, `scholar_timeout`, `scholar_cookie`,
+and `scholar_cookie_file`.
 
 For large workflows, prefer fetching each scholar's publications once and then
 reusing the returned data frame for multiple summaries.

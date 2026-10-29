@@ -1,3 +1,16 @@
+# scholar 1.0.1
+
++ Google Scholar refuses a script in more ways than a failed request, and each one is now named: a sign-in redirect, a captcha page served with HTTP 200, a 403, a dropped connection, or a rate limit. A refusal is reported once per session with its real cause instead of "Cannot connect to Google Scholar. Is the ID you provided correct?" (2026-10-29, Thu, jkeirstead#123)
++ send browser-like headers on every request, back off exponentially with jitter when rate limited, honour `Retry-After` in both its forms, and bound the total waiting per process with `scholar_retry_budget` (60 seconds by default), so a blocked check fails fast instead of spending its time on delays (2026-10-29, Thu, jkeirstead#123)
++ author search now requires a signed-in session, so `get_scholar_id()` and `search_scholar_ids()` are deprecated for anonymous use and say when Google refused rather than finding nothing; `search_openalex_authors()` answers the same question from OpenAlex with no session, and a fractional `max_results` is rounded rather than sent as a request OpenAlex rejects (2026-10-29, Thu, jkeirstead#91)
++ `set_scholar_cookie()` and the `scholar_cookie` / `scholar_cookie_file` settings present a session exported from a browser. It is sent as a cookie, so it merges with Google's own and survives the redirect to the sign-in host, and it is never sent to a mirror that is not a Google host (2026-10-29, Thu, jkeirstead#91)
++ add `get_citing_articles()`: the works citing a publication, with venue, year and their own citation counts (2026-10-29, Thu, jkeirstead#4, jkeirstead#107)
++ add `get_h_index_history()`: the h-index year by year, rebuilt from each publication's citation history and cached so the expensive pass happens once. It works for a profile whose cited papers all fall in one year, and a refused history is no longer cached as a paper that was never cited (2026-10-29, Thu, jkeirstead#73)
++ `get_profile()` reports every colleague rather than the twenty the sidebar shows, and no longer mistakes a profile's sort-menu links for coauthors (2026-10-29, Thu)
++ `get_journalrank()` is deprecated and downloads nothing: SCImago serves a JavaScript challenge to scripts and its table carries no published licence. The help page points at OpenAlex for journal metrics (2026-10-29, Thu)
++ new settings, each falling back to an environment variable of the same name in upper case, for hosted deployments and CI: `scholar_user_agent`, `scholar_accept_language`, `scholar_request_delay`, `scholar_retry_delay`, `scholar_retry_max_delay`, `scholar_retry_budget`, `scholar_timeout`, `scholar_cookie`, `scholar_cookie_file` and `scholar_openalex_mailto` (2026-10-29, Thu)
++ the README and the vignette say what to do when Scholar refuses a request, list every setting the package reads, and warn which endpoints a server cannot reach (2026-10-29, Thu, jkeirstead#123, jkeirstead#91)
+
 # scholar 1.0.0
 
 + convert the package vignette from R Markdown to Quarto and expand the feature overview (2026-07-07, Tue)

@@ -84,6 +84,7 @@ test_that("get_publication_abstract works", {
   pub_id <- "HIFyuExEbWQC" # pub[1,]$pubid
 
   abst <- scholar::get_publication_abstract(id, pub_id)
+  skip_if_no_scholar_data(abst)
   #message(paste0(" ",stringr::str_sub(abst, 1, 21)))
   testthat::expect_equal(stringr::str_sub(abst,1,20), "Practitioner Summary")
 })
@@ -96,6 +97,7 @@ test_that("get_publication_url works", {
   pub_id <- "HIFyuExEbWQC" #pub_id <- pub[1,]$pubid
 
   url <- scholar::get_publication_url(id, pub_id)
+  skip_if_no_scholar_data(url)
   # message(paste0(" ",stringr::str_sub(url, 1, 8)))
   testthat::expect_equal(stringr::str_sub(url, 1,8), "https://")
 })
@@ -105,3 +107,10 @@ test_that("get_publication_url works", {
 # Here we could add tests that use cached data
 # context("scholar tests - offline")
 
+
+test_that("get_journalrank explains its deprecation instead of downloading", {
+    expect_error(get_journalrank("Nature"), "deprecated")
+    expect_error(get_journalrank(c("Nature", "Science")), "OpenAlex")
+    ## nothing is fetched, so this must not reach the network at all
+    expect_error(get_journalrank(), "downloads nothing")
+})

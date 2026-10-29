@@ -71,8 +71,10 @@ get_profile <- function(id) {
   ## Extract the homepage
   homepage <- page %>% html_nodes(xpath="//*/div[@id='gsc_prf_ivh']//a/@href") %>% html_text()
 
-  ## Grab all coauthors
-  coauthors <- list_coauthors(id, n_coauthors = 20) # maximum availabe in profile
+  ## Grab all coauthors. `Inf` reads the whole colleagues list: the twenty
+  ## names in the profile sidebar are only what the sidebar shows, and the
+  ## list behind it is longer - 107 for a well-collaborated profile.
+  coauthors <- list_coauthors(id, n_coauthors = Inf)
 
   ## Check 'publicly available' vs 'not publicly available' statistics
   ## (note, not actually detecting open access, just free-to view) 
@@ -297,6 +299,12 @@ author_position <- function(authorlist, author){
 
 #' Search for Google Scholar ID by name and affiliation
 #'
+#' @description Deprecated for anonymous use: Google now answers author search
+#'   with a sign-in page, so this works only where a browser session has been
+#'   supplied with \code{\link{set_scholar_cookie}}, or through a mirror that
+#'   serves the endpoint. \code{\link{search_openalex_authors}} does the same
+#'   job with no session at all and is the route to prefer for new code.
+#'
 #' @param last_name Researcher last name.
 #' @param first_name Researcher first name.
 #' @param affiliation Researcher affiliation.
@@ -306,8 +314,8 @@ author_position <- function(authorlist, author){
 #' @importFrom httr content
 #'
 #' @examples
-#' get_scholar_id(first_name = "kristopher", last_name = "mcneill")
 #' \donttest{
+#' get_scholar_id(first_name = "kristopher", last_name = "mcneill")
 #' get_scholar_id(first_name = "michael", last_name = "sander", affiliation = NA)
 #' get_scholar_id(first_name = "michael", last_name = "sander", affiliation = "eth")
 #' get_scholar_id(first_name = "michael", last_name = "sander", affiliation = "ETH Zurich")
@@ -335,13 +343,28 @@ get_scholar_id <- function(last_name="", first_name="", affiliation = NA) {
   queries <- unique(queries[nzchar(queries)])
 
   ids <- character(0)
+  ## `aa` holds the text of the last page we managed to fetch. It has to be
+  ## defined before the loop: when Google Scholar refuses the connection
+  ## every query yields a NULL page and `next` skips the assignment below,
+  ## so the sign-in check after the loop used to die with
+  ## "object 'aa' not found" instead of reporting that no ID was found.
+  aa <- ""
+  refused <- FALSE
   for (q in queries) {
     mval <- q
     mval <- gsub('"', '%22', mval)
     mval <- gsub(' ', '+', mval)
     url <- paste0(site, '/citations?view_op=search_authors&mauthors=', mval, '&hl=en&oi=ao')
     page <- get_scholar_resp(url)
-    if (is.null(page)) next
+    if (is.null(page)) {
+        ## NULL means the page could not be fetched at all - refused, rate
+        ## limited, or the connection failed - and never 'no matches', which is
+        ## a 200 page with an empty result list. The other spellings of the name
+        ## would meet the same wall, so trying them spends five more requests to
+        ## learn nothing.
+        refused <- TRUE
+        break
+    }
     aa <- scholar_response_text(page)
     doc <- read_scholar_html(page)
     hrefs <- rvest::html_nodes(doc, css = ".gs_ai_name a") |> rvest::html_attr("href")
@@ -378,11 +401,15 @@ get_scholar_id <- function(last_name="", first_name="", affiliation = NA) {
   }
 
   if (length(ids) == 0) {
-    # Heuristic: detect sign-in/verification pages and give informative message
-    if (grepl("Sign into continue|I'm not a robot|verify", aa, ignore.case = TRUE)) {
-      message("Author search page requires sign-in/verification; cannot extract ID from this environment.")
-    } else {
+    if (refused || grepl("Sign into continue|I'm not a robot|verify", aa, ignore.case = TRUE)) {
+      scholar_refused()
+    } else if (nzchar(scholar_cookie())) {
       message("No Scholar ID found.")
+    } else {
+      message("No Scholar ID found. Without a session, an empty author search ",
+              "is what Google returns to a client it will not serve; see ",
+              "?get_scholar_id and use search_openalex_authors() to search ",
+              "without a session.")
     }
     return(NA)
   }
@@ -415,6 +442,11 @@ get_scholar_id <- function(last_name="", first_name="", affiliation = NA) {
 #' Search Google Scholar IDs by author name
 #'
 #' Searches Google Scholar author results and returns matching author IDs.
+#' Author search is deprecated for anonymous use: Google redirects it to a
+#' sign-in page unless the request carries a browser session, see
+#' \code{\link{set_scholar_cookie}}.
+#' \code{\link{search_openalex_authors}} returns the same kind of candidate
+#' list without any session.
 #'
 #' @param name author search query
 #' @param max_pages maximum number of search result pages to fetch
@@ -448,12 +480,16 @@ search_scholar_ids <- function(name, max_pages = Inf, delay = 0) {
   pages <- 0
   seen_urls <- character(0)
   out <- list()
+  refused <- FALSE
   repeat {
     if (url %in% seen_urls) break
     seen_urls <- c(seen_urls, url)
 
     page <- get_scholar_resp(url)
-    if (is.null(page)) break
+    if (is.null(page)) {
+      refused <- TRUE
+      break
+    }
 
     doc <- read_scholar_html(page)
     parsed <- parse_scholar_id_search(doc, site)
@@ -468,6 +504,7 @@ search_scholar_ids <- function(name, max_pages = Inf, delay = 0) {
   }
 
   if (length(out) == 0) {
+    if (refused) scholar_refused()
     return(empty_scholar_id_search())
   }
 

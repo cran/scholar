@@ -2,19 +2,23 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.8.25">
+<meta name="generator" content="quarto-1.10.18">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Guangchuang Yu, James Keirstead and Gregory Jefferis">
-<meta name="dcterms.date" content="2026-07-07">
+<meta name="dcterms.date" content="2026-10-29">
 
 <title>scholar: Analyse Citation Data from Google Scholar</title>
 <style>
-code{white-space: pre-wrap;}
+
 span.smallcaps{font-variant: small-caps;}
-div.columns{display: flex; gap: min(4vw, 1.5em);}
-div.column{flex: auto; overflow-x: auto;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
 div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
 ul.task-list{list-style: none;}
 ul.task-list li input[type="checkbox"] {
@@ -211,7 +215,7 @@ text-decoration: underline; }
 <h1 class="title">scholar: Analyse Citation Data from Google Scholar</h1>
 <p class="author">Guangchuang Yu, James Keirstead and Gregory Jefferis</p>
 
-<p class="date">2026-07-07</p>
+<p class="date">2026-10-29</p>
 </header>
 
 <nav id="TOC" role="doc-toc">
@@ -223,6 +227,7 @@ text-decoration: underline; }
   <li><a href="#profile-data" id="toc-profile-data">Profile Data</a></li>
   <li><a href="#publications" id="toc-publications">Publications</a></li>
   <li><a href="#citation-histories" id="toc-citation-histories">Citation Histories</a></li>
+  <li><a href="#how-the-h-index-grew" id="toc-how-the-h-index-grew">How the h-index Grew</a></li>
   <li><a href="#citation-metrics" id="toc-citation-metrics">Citation Metrics</a></li>
   <li><a href="#publication-details" id="toc-publication-details">Publication Details</a></li>
   <li><a href="#comparing-scholars" id="toc-comparing-scholars">Comparing Scholars</a></li>
@@ -230,7 +235,10 @@ text-decoration: underline; }
   <li><a href="#journal-rankings" id="toc-journal-rankings">Journal Rankings</a></li>
   <li><a href="#predicting-future-h-index" id="toc-predicting-future-h-index">Predicting Future h-index</a></li>
   <li><a href="#formatting-publications-for-cvs" id="toc-formatting-publications-for-cvs">Formatting Publications for CVs</a></li>
-  <li><a href="#mirrors-retries-and-caching" id="toc-mirrors-retries-and-caching">Mirrors, Retries, and Caching</a></li>
+  <li><a href="#mirrors-retries-and-caching" id="toc-mirrors-retries-and-caching">Mirrors, Retries, and Caching</a>
+  <ul>
+  <li><a href="#when-scholar-refuses-servers-ci-and-hosted-apps" id="toc-when-scholar-refuses-servers-ci-and-hosted-apps">When Scholar refuses: servers, CI, and hosted apps</a></li>
+  </ul></li>
   </ul>
 </nav>
 <h1 id="overview">Overview</h1>
@@ -264,7 +272,7 @@ text-decoration: underline; }
 <pre><code>[1] &quot;B7vSqZsAAAAJ&quot;</code></pre>
 </div>
 </div>
-<p>You can search for one matching ID with <code>get_scholar_id()</code>.</p>
+<p>Author search is the endpoint Google has put behind a login, so <code>get_scholar_id()</code> and <code>search_scholar_ids()</code> can come back empty on a machine where a browser shows the profile plainly; the package warns when the result is a refusal rather than an absence of matches. If you have the profile URL, take the ID from it. If you are matching authors programmatically, OpenAlex is the sanctioned source.</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">get_scholar_id</span>(<span class="at">first_name =</span> <span class="st">&quot;Richard&quot;</span>, <span class="at">last_name =</span> <span class="st">&quot;Feynman&quot;</span>)</span></code></pre></div>
 </div>
@@ -326,118 +334,167 @@ text-decoration: underline; }
 <span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">size =</span> <span class="dv">3</span>, <span class="at">colour =</span> <span class="st">&quot;firebrick&quot;</span>) <span class="sc">+</span></span>
 <span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">&quot;Year&quot;</span>, <span class="at">y =</span> <span class="st">&quot;Citations&quot;</span>)</span></code></pre></div>
 </div>
+<p><code>get_citing_articles()</code> goes one step further than a citation count and lists the works citing a publication, with their venue and year, which is what you need to split a citation curve by community or to measure an autocitation rate. Google caps the list the same way the “cited by” link does, and guards it more closely than a profile page, so expect it to be refused from a server.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb18"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>pubs <span class="ot">&lt;-</span> <span class="fu">get_publications</span>(id)</span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>top <span class="ot">&lt;-</span> pubs[<span class="fu">which.max</span>(pubs<span class="sc">$</span>cites), ]</span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a><span class="fu">get_citing_articles</span>(id, top<span class="sc">$</span>pubid, <span class="at">publications =</span> pubs, <span class="at">max_pages =</span> <span class="dv">2</span>)</span></code></pre></div>
+</div>
+<h1 id="how-the-h-index-grew">How the h-index Grew</h1>
+<p><code>get_profile()</code> reports one h-index at one moment. <code>get_h_index_history()</code> rebuilds it year by year from the citation history of each publication, which is the difference between knowing someone is at h-index 39 and knowing whether they got there in five years or thirty.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb19"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>history <span class="ot">&lt;-</span> <span class="fu">get_h_index_history</span>(id, <span class="at">delay =</span> <span class="dv">1</span>)</span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a><span class="fu">head</span>(history)</span></code></pre></div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb20"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(history, <span class="fu">aes</span>(year, h_index)) <span class="sc">+</span></span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_step</span>(<span class="at">direction =</span> <span class="st">&quot;hv&quot;</span>) <span class="sc">+</span></span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="cn">NULL</span>, <span class="at">y =</span> <span class="st">&quot;h-index&quot;</span>,</span>
+<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a>       <span class="at">title =</span> <span class="st">&quot;How the h-index accumulated&quot;</span>,</span>
+<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a>       <span class="at">subtitle =</span> <span class="st">&quot;each step is a year in which another paper reached the threshold&quot;</span>)</span></code></pre></div>
+</div>
+<p>The cost is one request per cited publication, so the histories are cached with <code>R.cache</code> and a second call for the same profile makes no requests. Pass <code>flush = TRUE</code> to refresh. Publications with no citations are skipped, since they cannot enter an h-index in any year, and the curve is only as long as the years Google reports per publication.</p>
 <h1 id="citation-metrics">Citation Metrics</h1>
 <p><code>get_publication_metrics()</code> calculates metrics from a publication data frame. <code>get_scholar_metrics()</code> fetches publications and calculates the same summary in one call.</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb18"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="fu">get_publication_metrics</span>(pubs)</span>
-<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a><span class="fu">get_scholar_metrics</span>(id, <span class="at">pagesize =</span> <span class="dv">20</span>)</span></code></pre></div>
+<div class="sourceCode cell-code" id="cb21"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="fu">get_publication_metrics</span>(pubs)</span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a><span class="fu">get_scholar_metrics</span>(id, <span class="at">pagesize =</span> <span class="dv">20</span>)</span></code></pre></div>
 </div>
 <p>The package also includes focused helpers used by the h-index prediction model.</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb19"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="fu">get_num_articles</span>(id)</span>
-<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a><span class="fu">get_oldest_article</span>(id)</span>
-<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a><span class="fu">get_num_distinct_journals</span>(id)</span>
-<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a><span class="fu">get_num_top_journals</span>(id)</span></code></pre></div>
+<div class="sourceCode cell-code" id="cb22"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="fu">get_num_articles</span>(id)</span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a><span class="fu">get_oldest_article</span>(id)</span>
+<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a><span class="fu">get_num_distinct_journals</span>(id)</span>
+<span id="cb22-4"><a href="#cb22-4" aria-hidden="true" tabindex="-1"></a><span class="fu">get_num_top_journals</span>(id)</span></code></pre></div>
 </div>
 <h1 id="publication-details">Publication Details</h1>
 <p>Google Scholar publication detail pages can expose additional fields. These helpers accept a Scholar ID and a publication ID.</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb20"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>pubid <span class="ot">&lt;-</span> pubs<span class="sc">$</span>pubid[<span class="dv">1</span>]</span>
-<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a><span class="fu">get_article_scholar_url</span>(id, pubid)</span>
-<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a><span class="fu">get_publication_url</span>(id, pubid)</span>
-<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a><span class="fu">get_publication_date</span>(id, pubid)</span>
-<span id="cb20-6"><a href="#cb20-6" aria-hidden="true" tabindex="-1"></a><span class="fu">get_publication_abstract</span>(id, pubid)</span>
-<span id="cb20-7"><a href="#cb20-7" aria-hidden="true" tabindex="-1"></a><span class="fu">get_publication_data_extended</span>(id, pubid)</span></code></pre></div>
+<div class="sourceCode cell-code" id="cb23"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a>pubid <span class="ot">&lt;-</span> pubs<span class="sc">$</span>pubid[<span class="dv">1</span>]</span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a><span class="fu">get_article_scholar_url</span>(id, pubid)</span>
+<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a><span class="fu">get_publication_url</span>(id, pubid)</span>
+<span id="cb23-5"><a href="#cb23-5" aria-hidden="true" tabindex="-1"></a><span class="fu">get_publication_date</span>(id, pubid)</span>
+<span id="cb23-6"><a href="#cb23-6" aria-hidden="true" tabindex="-1"></a><span class="fu">get_publication_abstract</span>(id, pubid)</span>
+<span id="cb23-7"><a href="#cb23-7" aria-hidden="true" tabindex="-1"></a><span class="fu">get_publication_data_extended</span>(id, pubid)</span></code></pre></div>
 </div>
 <p>Some publications have no linked PDF, abstract, or publication date on Google Scholar. In those cases the corresponding helper may return an empty value or <code>NA</code>.</p>
 <h1 id="comparing-scholars">Comparing Scholars</h1>
 <p><code>compare_scholars()</code> compares citation totals from publication records by publication year.</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb21"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>ids <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">&quot;B7vSqZsAAAAJ&quot;</span>, <span class="st">&quot;DO5oG40AAAAJ&quot;</span>)</span>
-<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>cs <span class="ot">&lt;-</span> <span class="fu">compare_scholars</span>(ids)</span>
-<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a><span class="fu">head</span>(cs, <span class="dv">3</span>)</span></code></pre></div>
+<div class="sourceCode cell-code" id="cb24"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a>ids <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">&quot;B7vSqZsAAAAJ&quot;</span>, <span class="st">&quot;DO5oG40AAAAJ&quot;</span>)</span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>cs <span class="ot">&lt;-</span> <span class="fu">compare_scholars</span>(ids)</span>
+<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a><span class="fu">head</span>(cs, <span class="dv">3</span>)</span></code></pre></div>
 </div>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb22"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a>cs <span class="ot">&lt;-</span> dplyr<span class="sc">::</span><span class="fu">filter</span>(cs, <span class="sc">!</span><span class="fu">is.na</span>(year) <span class="sc">&amp;</span> year <span class="sc">&gt;</span> <span class="dv">1900</span>)</span>
-<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(cs, <span class="fu">aes</span>(year, cites, <span class="at">colour =</span> name, <span class="at">group =</span> name)) <span class="sc">+</span></span>
-<span id="cb22-4"><a href="#cb22-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>() <span class="sc">+</span></span>
-<span id="cb22-5"><a href="#cb22-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">&quot;Publication year&quot;</span>, <span class="at">y =</span> <span class="st">&quot;Citations&quot;</span>, <span class="at">colour =</span> <span class="cn">NULL</span>) <span class="sc">+</span></span>
-<span id="cb22-6"><a href="#cb22-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">legend.position =</span> <span class="st">&quot;bottom&quot;</span>)</span></code></pre></div>
+<div class="sourceCode cell-code" id="cb25"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a>cs <span class="ot">&lt;-</span> dplyr<span class="sc">::</span><span class="fu">filter</span>(cs, <span class="sc">!</span><span class="fu">is.na</span>(year) <span class="sc">&amp;</span> year <span class="sc">&gt;</span> <span class="dv">1900</span>)</span>
+<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-3"><a href="#cb25-3" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(cs, <span class="fu">aes</span>(year, cites, <span class="at">colour =</span> name, <span class="at">group =</span> name)) <span class="sc">+</span></span>
+<span id="cb25-4"><a href="#cb25-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>() <span class="sc">+</span></span>
+<span id="cb25-5"><a href="#cb25-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">&quot;Publication year&quot;</span>, <span class="at">y =</span> <span class="st">&quot;Citations&quot;</span>, <span class="at">colour =</span> <span class="cn">NULL</span>) <span class="sc">+</span></span>
+<span id="cb25-6"><a href="#cb25-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">legend.position =</span> <span class="st">&quot;bottom&quot;</span>)</span></code></pre></div>
 </div>
 <p><code>compare_scholar_careers()</code> compares citation histories after aligning each scholar by career year.</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb23"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a>csc <span class="ot">&lt;-</span> <span class="fu">compare_scholar_careers</span>(ids)</span>
-<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a><span class="fu">head</span>(csc, <span class="dv">3</span>)</span></code></pre></div>
+<div class="sourceCode cell-code" id="cb26"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a>csc <span class="ot">&lt;-</span> <span class="fu">compare_scholar_careers</span>(ids)</span>
+<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a><span class="fu">head</span>(csc, <span class="dv">3</span>)</span></code></pre></div>
 </div>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb24"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(csc, <span class="fu">aes</span>(career_year, cites, <span class="at">colour =</span> name, <span class="at">group =</span> name)) <span class="sc">+</span></span>
-<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>() <span class="sc">+</span></span>
-<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>() <span class="sc">+</span></span>
-<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">&quot;Career year&quot;</span>, <span class="at">y =</span> <span class="st">&quot;Citations&quot;</span>, <span class="at">colour =</span> <span class="cn">NULL</span>) <span class="sc">+</span></span>
-<span id="cb24-5"><a href="#cb24-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">legend.position =</span> <span class="st">&quot;bottom&quot;</span>)</span></code></pre></div>
+<div class="sourceCode cell-code" id="cb27"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(csc, <span class="fu">aes</span>(career_year, cites, <span class="at">colour =</span> name, <span class="at">group =</span> name)) <span class="sc">+</span></span>
+<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>() <span class="sc">+</span></span>
+<span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>() <span class="sc">+</span></span>
+<span id="cb27-4"><a href="#cb27-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">&quot;Career year&quot;</span>, <span class="at">y =</span> <span class="st">&quot;Citations&quot;</span>, <span class="at">colour =</span> <span class="cn">NULL</span>) <span class="sc">+</span></span>
+<span id="cb27-5"><a href="#cb27-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">legend.position =</span> <span class="st">&quot;bottom&quot;</span>)</span></code></pre></div>
 </div>
 <h1 id="coauthor-networks">Coauthor Networks</h1>
 <p><code>get_coauthors()</code> retrieves the coauthors listed by Google Scholar for a profile and can optionally expand the network by following coauthors’ profiles. Keep <code>n_coauthors</code> and <code>n_deep</code> small for exploratory work; network plots get messy quickly and repeated requests can be rate limited.</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb25"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a>coauthor_network <span class="ot">&lt;-</span> <span class="fu">get_coauthors</span>(<span class="st">&quot;DO5oG40AAAAJ&quot;</span>, <span class="at">n_coauthors =</span> <span class="dv">4</span>, <span class="at">n_deep =</span> <span class="dv">0</span>)</span>
-<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a>coauthor_network</span></code></pre></div>
+<div class="sourceCode cell-code" id="cb28"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a>coauthor_network <span class="ot">&lt;-</span> <span class="fu">get_coauthors</span>(<span class="st">&quot;DO5oG40AAAAJ&quot;</span>, <span class="at">n_coauthors =</span> <span class="dv">4</span>, <span class="at">n_deep =</span> <span class="dv">0</span>)</span>
+<span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a>coauthor_network</span></code></pre></div>
 </div>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb26"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (<span class="fu">nrow</span>(coauthor_network) <span class="sc">&gt;</span> <span class="dv">1</span>) {</span>
-<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">plot_coauthors</span>(coauthor_network)</span>
-<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
+<div class="sourceCode cell-code" id="cb29"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (<span class="fu">nrow</span>(coauthor_network) <span class="sc">&gt;</span> <span class="dv">1</span>) {</span>
+<span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">plot_coauthors</span>(coauthor_network)</span>
+<span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
 </div>
 <h1 id="journal-rankings">Journal Rankings</h1>
-<p><code>get_journalrank()</code> downloads SCImago journal ranking data. With no <code>journals</code> argument it returns the full table. With a character vector it matches journal names to SCImago rows using approximate matching.</p>
+<p><code>get_journalrank()</code> is deprecated and fetches nothing. SCImago has served its ranking page behind a JavaScript challenge since late 2025, so a script is answered with HTTP 403 and cannot read the table, and the table carries no published licence. The function remains so that old code fails with an explanation rather than a stack trace:</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb27"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a>jr <span class="ot">&lt;-</span> <span class="fu">get_journalrank</span>()</span>
-<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a><span class="fu">head</span>(jr, <span class="dv">3</span>)</span>
-<span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb27-4"><a href="#cb27-4" aria-hidden="true" tabindex="-1"></a><span class="fu">get_journalrank</span>(<span class="fu">c</span>(<span class="st">&quot;Nature&quot;</span>, <span class="st">&quot;Science&quot;</span>))</span></code></pre></div>
+<div class="sourceCode cell-code" id="cb30"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="fu">get_journalrank</span>(<span class="fu">c</span>(<span class="st">&quot;Nature&quot;</span>, <span class="st">&quot;Science&quot;</span>))</span></code></pre></div>
+<div class="cell-output cell-output-error">
+<pre><code>Error:
+! get_journalrank() is deprecated and downloads nothing.
+  SCImago answers a script with a JavaScript challenge (HTTP 403), and the table has no published licence.
+  For journal metrics use OpenAlex, which is openly licensed and needs no scraping:
+    https://api.openalex.org/sources?search=Nature
+  For SJR quartiles specifically, save the table by hand from https://www.scimagojr.com/journalrank.php in a browser and read it with utils::read.csv2().</code></pre>
 </div>
+</div>
+<p>For journal metrics, use OpenAlex, which is openly licensed, built for programmatic use, and needs no session or scraping. It publishes the h-index, i10-index, work and citation counts, and the ISSNs of a journal:</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb32"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a>openalex <span class="ot">&lt;-</span> jsonlite<span class="sc">::</span><span class="fu">fromJSON</span>(</span>
+<span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a>  <span class="st">&quot;https://api.openalex.org/sources?search=Nature&amp;per-page=1&quot;</span>)</span>
+<span id="cb32-3"><a href="#cb32-3" aria-hidden="true" tabindex="-1"></a>openalex<span class="sc">$</span>results[, <span class="fu">c</span>(<span class="st">&quot;display_name&quot;</span>, <span class="st">&quot;works_count&quot;</span>, <span class="st">&quot;cited_by_count&quot;</span>)]</span>
+<span id="cb32-4"><a href="#cb32-4" aria-hidden="true" tabindex="-1"></a>openalex<span class="sc">$</span>results<span class="sc">$</span>summary_stats</span></code></pre></div>
+</div>
+<p>If you need SCImago’s SJR quartiles specifically, save the table by hand in a browser from <code>https://www.scimagojr.com/journalrank.php</code> and read it with <code>utils::read.csv2()</code> — the separators are semicolons.</p>
 <h1 id="predicting-future-h-index">Predicting Future h-index</h1>
 <p><code>predict_h_index()</code> implements the model from Acuna et al. for predicting future h-index values. The original model was calibrated on neuroscientists, so results for other fields should be treated as illustrative rather than authoritative.</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb28"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="fu">predict_h_index</span>(<span class="st">&quot;GAi23ssAAAAJ&quot;</span>)</span></code></pre></div>
+<div class="sourceCode cell-code" id="cb33"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a><span class="fu">predict_h_index</span>(<span class="st">&quot;GAi23ssAAAAJ&quot;</span>)</span></code></pre></div>
 </div>
 <p>You can provide a custom list of top journals for the model’s top-journal predictor.</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb29"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="fu">predict_h_index</span>(</span>
-<span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a>  id,</span>
-<span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">journals =</span> <span class="fu">c</span>(<span class="st">&quot;Nature&quot;</span>, <span class="st">&quot;Science&quot;</span>, <span class="st">&quot;Proceedings of the National Academy of Sciences&quot;</span>)</span>
-<span id="cb29-4"><a href="#cb29-4" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div>
+<div class="sourceCode cell-code" id="cb34"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="fu">predict_h_index</span>(</span>
+<span id="cb34-2"><a href="#cb34-2" aria-hidden="true" tabindex="-1"></a>  id,</span>
+<span id="cb34-3"><a href="#cb34-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">journals =</span> <span class="fu">c</span>(<span class="st">&quot;Nature&quot;</span>, <span class="st">&quot;Science&quot;</span>, <span class="st">&quot;Proceedings of the National Academy of Sciences&quot;</span>)</span>
+<span id="cb34-4"><a href="#cb34-4" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div>
 </div>
 <h1 id="formatting-publications-for-cvs">Formatting Publications for CVs</h1>
 <p><code>format_publications()</code> returns publication strings that can be printed in R Markdown, Quarto, or a CV workflow. The <code>author.name</code> argument highlights a chosen author in bold after converting the supplied name to the abbreviated format used by the output.</p>
-<div class="sourceCode cell-code" id="cb30"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="fu">format_publications</span>(<span class="st">&quot;DO5oG40AAAAJ&quot;</span>, <span class="st">&quot;Guangchuang Yu&quot;</span>) <span class="sc">|&gt;</span></span>
-<span id="cb30-2"><a href="#cb30-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">head</span>() <span class="sc">|&gt;</span></span>
-<span id="cb30-3"><a href="#cb30-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cat</span>(<span class="at">sep =</span> <span class="st">&quot;</span><span class="sc">\n\n</span><span class="st">&quot;</span>)</span></code></pre></div>
+<div class="sourceCode cell-code" id="cb35"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a><span class="fu">format_publications</span>(<span class="st">&quot;DO5oG40AAAAJ&quot;</span>, <span class="st">&quot;Guangchuang Yu&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb35-2"><a href="#cb35-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">head</span>() <span class="sc">|&gt;</span></span>
+<span id="cb35-3"><a href="#cb35-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cat</span>(<span class="at">sep =</span> <span class="st">&quot;</span><span class="sc">\n\n</span><span class="st">&quot;</span>)</span></code></pre></div>
 <p>For numbered output, print the returned vector directly.</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb31"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="fu">format_publications</span>(<span class="st">&quot;DO5oG40AAAAJ&quot;</span>, <span class="st">&quot;Guangchuang Yu&quot;</span>) <span class="sc">|&gt;</span></span>
-<span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">head</span>() <span class="sc">|&gt;</span></span>
-<span id="cb31-3"><a href="#cb31-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">print</span>(<span class="at">quote =</span> <span class="cn">FALSE</span>)</span></code></pre></div>
+<div class="sourceCode cell-code" id="cb36"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a><span class="fu">format_publications</span>(<span class="st">&quot;DO5oG40AAAAJ&quot;</span>, <span class="st">&quot;Guangchuang Yu&quot;</span>) <span class="sc">|&gt;</span></span>
+<span id="cb36-2"><a href="#cb36-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">head</span>() <span class="sc">|&gt;</span></span>
+<span id="cb36-3"><a href="#cb36-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">print</span>(<span class="at">quote =</span> <span class="cn">FALSE</span>)</span></code></pre></div>
 </div>
 <h1 id="mirrors-retries-and-caching">Mirrors, Retries, and Caching</h1>
 <p>Use <code>set_scholar_mirror()</code> if you need to point the package at a compatible Scholar mirror.</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb32"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set_scholar_mirror</span>(<span class="st">&quot;https://scholar.google.com&quot;</span>)</span></code></pre></div>
+<div class="sourceCode cell-code" id="cb37"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb37-1"><a href="#cb37-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set_scholar_mirror</span>(<span class="st">&quot;https://scholar.google.com&quot;</span>)</span></code></pre></div>
 </div>
 <p>All network requests go through <code>get_scholar_resp()</code>, which stores Google Scholar session cookies and retries transient failures. <code>get_publications()</code> also caches profile publication data with <code>R.cache</code> in a temporary cache directory. Use <code>flush = TRUE</code> in <code>get_publications()</code> or functions that forward to it when you need fresh data.</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb33"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a><span class="fu">get_publications</span>(id, <span class="at">flush =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb33-2"><a href="#cb33-2" aria-hidden="true" tabindex="-1"></a><span class="fu">get_scholar_metrics</span>(id, <span class="at">flush =</span> <span class="cn">TRUE</span>)</span></code></pre></div>
+<div class="sourceCode cell-code" id="cb38"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a><span class="fu">get_publications</span>(id, <span class="at">flush =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb38-2"><a href="#cb38-2" aria-hidden="true" tabindex="-1"></a><span class="fu">get_scholar_metrics</span>(id, <span class="at">flush =</span> <span class="cn">TRUE</span>)</span></code></pre></div>
 </div>
+<h2 id="when-scholar-refuses-servers-ci-and-hosted-apps">When Scholar refuses: servers, CI, and hosted apps</h2>
+<p>Google guards Scholar against automated clients, and how it responds depends on where the request comes from. On your machine a profile page opens; on shinyapps.io, a GitLab runner or a GitHub Actions job the same request can come back as a sign-in redirect, a captcha, or HTTP 403. The package no longer describes that as a bad ID: <code>get_scholar_resp()</code> inspects the address the request finally landed on and the body it carries, then warns with the reason.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb39"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a><span class="fu">get_profile</span>(<span class="st">&quot;B7vSqZsAAAAJ&quot;</span>)</span>
+<span id="cb39-2"><a href="#cb39-2" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Warning: Google Scholar returned a captcha page that needs JavaScript, so the</span></span>
+<span id="cb39-3"><a href="#cb39-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   response contains no data. ... Carry the session of a browser that opens the</span></span>
+<span id="cb39-4"><a href="#cb39-4" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt;   page with set_scholar_cookie(), ... or run it from a workstation.</span></span></code></pre></div>
+</div>
+<p>Four ways out, in the order they are worth trying:</p>
+<ol type="1">
+<li><strong>Fetch outside the app.</strong> Pull the data where a person browses, save it, and have the deployed app read the saved table. Scholar data changes slowly and an app rarely needs a live scrape per visit.</li>
+<li><strong>Pace the requests.</strong> <code>options(scholar_request_delay = 1)</code> (or <code>SCHOLAR_REQUEST_DELAY=1</code> in CI) puts a pause in front of every request, and rate limits already back off geometrically within <code>scholar_retry_max_delay</code>. Loops over many publications are what get an IP flagged.</li>
+<li><strong>Present a session.</strong> <code>set_scholar_cookie(file = &quot;cookies.txt&quot;)</code>, or <code>SCHOLAR_COOKIE_FILE</code> on a server, reuses the session of a browser that opens the page. This is what author search now requires. A session is a credential: keep it out of the command history and out of version control, and note that the package sends it only to Google hosts, never to a mirror.</li>
+<li><strong>Use another source.</strong> For anything at scale, OpenAlex (<code>https://api.openalex.org</code>) is sanctioned, needs no session, and returns h-index and citation counts alongside the works.</li>
+</ol>
+<p>The settings the package reads, each with an environment variable of the same name in upper case: <code>scholar_site</code>, <code>scholar_user_agent</code>, <code>scholar_accept_language</code>, <code>scholar_request_delay</code>, <code>scholar_retry_delay</code>, <code>scholar_retry_max_delay</code>, <code>scholar_timeout</code>, <code>scholar_cookie</code>, and <code>scholar_cookie_file</code>.</p>
 <p>For large workflows, prefer fetching each scholar’s publications once and then reusing the returned data frame for multiple summaries.</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb34"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a>pubs <span class="ot">&lt;-</span> <span class="fu">get_publications</span>(id)</span>
-<span id="cb34-2"><a href="#cb34-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb34-3"><a href="#cb34-3" aria-hidden="true" tabindex="-1"></a>recent <span class="ot">&lt;-</span> <span class="fu">subset</span>(pubs, <span class="sc">!</span><span class="fu">is.na</span>(year) <span class="sc">&amp;</span> year <span class="sc">&gt;=</span> <span class="dv">2020</span>)</span>
-<span id="cb34-4"><a href="#cb34-4" aria-hidden="true" tabindex="-1"></a><span class="fu">nrow</span>(recent)</span>
-<span id="cb34-5"><a href="#cb34-5" aria-hidden="true" tabindex="-1"></a><span class="fu">sum</span>(recent<span class="sc">$</span>cites, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb34-6"><a href="#cb34-6" aria-hidden="true" tabindex="-1"></a><span class="fu">get_publication_metrics</span>(recent)</span></code></pre></div>
+<div class="sourceCode cell-code" id="cb40"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a>pubs <span class="ot">&lt;-</span> <span class="fu">get_publications</span>(id)</span>
+<span id="cb40-2"><a href="#cb40-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb40-3"><a href="#cb40-3" aria-hidden="true" tabindex="-1"></a>recent <span class="ot">&lt;-</span> <span class="fu">subset</span>(pubs, <span class="sc">!</span><span class="fu">is.na</span>(year) <span class="sc">&amp;</span> year <span class="sc">&gt;=</span> <span class="dv">2020</span>)</span>
+<span id="cb40-4"><a href="#cb40-4" aria-hidden="true" tabindex="-1"></a><span class="fu">nrow</span>(recent)</span>
+<span id="cb40-5"><a href="#cb40-5" aria-hidden="true" tabindex="-1"></a><span class="fu">sum</span>(recent<span class="sc">$</span>cites, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb40-6"><a href="#cb40-6" aria-hidden="true" tabindex="-1"></a><span class="fu">get_publication_metrics</span>(recent)</span></code></pre></div>
 </div>
 
 

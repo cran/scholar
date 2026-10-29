@@ -333,9 +333,6 @@ has_publication_data <- function(papers) {
 }
 
 
-
-
-
 # ##' Get journal metrics.
 # ##'
 # ##' Get journal metrics (impact factor) for a journal list.
@@ -365,117 +362,47 @@ has_publication_data <- function(papers) {
 # }
 
 
-get_journal_stats <- function(journals, max.distance, source_data, col = "Journal") {
-    journals <- as.character(journals)
-    index <- rep(NA, length(journals))
-
-    for(i in seq_along(journals)) {
-        journal <- journals[i]
-        if(journal == ""){
-            next
-        }
-
-        closest <- agrep(journal,
-                         source_data[[col]],
-                         max.distance = max.distance,
-                         value = FALSE,
-                         ignore.case = TRUE)
-
-        if(!is.null(closest)){
-            ## agrep() returns all "close" matches
-            ## but unfortunately does not return the degree of closeness.
-
-            ## index[i] <- closest[1]
-
-
-            j <- grep(paste0("^", journal, "$"), source_data[[col]][closest], ignore.case=TRUE)
-            if (length(j) > 0) {
-                j <- j[1]
-                index[i] <- closest[j]
-                next
-            }
-
-            get_hit <- function(pattern, x) {
-                j <- grep(pattern, x, ignore.case = TRUE)
-                if (length(j) > 0) {
-                    return(j[1])
-                }
-                return(NULL)
-            }
-
-            hit <- closest[1]
-            patterns <- c(paste0("^", journal, "$"),
-                          paste0("^", journal),
-                          paste0(journal, "$"))
-            for (pp in patterns) {
-                j <- get_hit(pp, source_data[[col]][closest])
-                if (!is.null(j)) {
-                    hit <- j
-                    break
-                }
-            }
-
-            index[i] <- hit
-        }
-
-    }
-
-    return(source_data[index, ])
-}
-
-
-##' Get journal ranking.
+##' Get journal ranking (deprecated)
 ##'
-##' Get SCImago journal ranking data.
+##' @description Deprecated: `get_journalrank()` no longer downloads anything.
+##'   SCImago has served its ranking page behind a JavaScript challenge since
+##'   late 2025, so a script is answered with HTTP 403 and cannot read the table
+##'   at all, and the table itself carries no published licence - it derives from
+##'   Elsevier's Scopus. Calling the function now says where journal metrics can
+##'   honestly be obtained instead of failing after a download nobody can make.
+##'
+##' @param journals a character vector of journal names. Unused; kept so that
+##'   existing calls reach this message rather than an unrelated error.
+##' @param max.distance unused, kept for the same reason.
+##'
+##' @return Never returns: an error is raised with the alternatives.
+##'
+##' @details For journal metrics, OpenAlex is openly licensed, made for
+##'   programmatic use and needs no scraping:
+##'   \url{https://api.openalex.org/sources?search=Nature} returns the h-index,
+##'   i10-index, work and citation counts, and the ISSNs of a journal. If you
+##'   need SCImago's SJR quartiles specifically, the table has to be saved by
+##'   hand from \url{https://www.scimagojr.com/journalrank.php} in a browser,
+##'   and can then be read with \code{utils::read.csv2()}.
 ##'
 ##' @examples
 ##' \dontrun{
-##' library(scholar)
-##'
-##' id <- get_publications("bg0BZ-QAAAAJ&hl")
-##' impact <- get_journalrank(journals=id$journal)
-##'
-##' id <- cbind(id, impact)
+##' get_journalrank(c("Nature", "Science"))
 ##' }
-##' @param journals a character list giving the journal list. If missing, the
-##' full SCImago journal ranking table is returned.
-##' @param max.distance maximum distance allowed for a match between journal and journal list.
-##' Expressed either as integer, or as a fraction of the pattern length times the maximal transformation cost
-##' (will be replaced by the smallest integer not less than the corresponding fraction), or a list with possible components
-##'
-##' @return Journal ranking data.
-##'
 ##' @export
 ##' @author Dominique Makowski and Guangchuang Yu
 get_journalrank <- function(journals, max.distance = 0.05) {
-    myjournalrankings <- download_scimagojr_rankings()
-    if (missing(journals)) {
-        return(myjournalrankings)
-    }
-    get_journal_stats(journals, max.distance, myjournalrankings, col = "Title")
+    stop("get_journalrank() is deprecated and downloads nothing.\n",
+         "  SCImago answers a script with a JavaScript challenge (HTTP 403), and ",
+         "the table has no published licence.\n",
+         "  For journal metrics use OpenAlex, which is openly licensed and needs ",
+         "no scraping:\n",
+         "    https://api.openalex.org/sources?search=Nature\n",
+         "  For SJR quartiles specifically, save the table by hand from ",
+         "https://www.scimagojr.com/journalrank.php in a browser and read it ",
+         "with utils::read.csv2().",
+         call. = FALSE)
 }
-
-download_scimagojr_rankings <- function(url = "https://www.scimagojr.com/journalrank.php?out=xls") {
-    resp <- httr::GET(
-        url,
-        httr::user_agent(paste(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-            "AppleWebKit/537.36 (KHTML, like Gecko)",
-            "Chrome/126.0 Safari/537.36"
-        )),
-        httr::add_headers(
-            Accept = "text/csv,application/vnd.ms-excel,*/*",
-            Referer = "https://www.scimagojr.com/journalrank.php"
-        )
-    )
-    httr::stop_for_status(resp, "download SCImago journal rankings")
-
-    txt <- httr::content(resp, as = "text", encoding = "UTF-8")
-    con <- textConnection(txt)
-    on.exit(close(con), add = TRUE)
-    utils::read.csv2(con, stringsAsFactors = FALSE, check.names = FALSE)
-}
-
 
 parse_citation_counts <- function(nodes) {
     text <- nodes %>% rvest::html_text2()
@@ -492,8 +419,6 @@ parse_citation_counts <- function(nodes) {
     cites[is.na(cites)] <- 0
     cites
 }
-
-
 
 
 ##' Gets the abstract for a publication id.

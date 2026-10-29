@@ -13,6 +13,55 @@ set_scholar_mirror <- function(mirror = NULL) {
 }
 
 
+##' set the Scholar session
+##'
+##' Supply the session that lets Google Scholar treat this R session like the
+##' browser you are already signed in with. Some endpoints, author search among
+##' them, answer an anonymous request with a Google sign-in page while showing
+##' data in a browser; the difference is the cookie.
+##'
+##' @title set_scholar_cookie
+##' @param cookie a \code{Cookie} header value copied from a browser, such as
+##'   \code{"NID=...; GSP=..."}, or \code{NULL} to leave it unchanged
+##' @param file path to a cookie file exported from a browser, either in the
+##'   Netscape format used by \code{curl} or as plain \code{name=value} text.
+##'   Both a cookie and a file may be set; their entries are merged.
+##' @return \code{NULL}, invisibly; the values are stored as options
+##' @details Google's own cookies are \code{HttpOnly}, so a browser will not
+##'   reveal them to a script or a copy button: take them from the developer
+##'   tools under Application, or with an extension that exports a cookie file.
+##'   Published lifetimes are six months for \code{NID} and thirteen for
+##'   \code{_Secure-ENID} and \code{SOCS}, counted from last use, and Google
+##'   ends a session sooner when it looks automated, so expect to export it
+##'   again. On a server or in CI, where there is no browser to copy from, set
+##'   the \code{SCHOLAR_COOKIE_FILE} environment variable rather than passing
+##'   the value here: a session is a credential, and an option or an argument
+##'   lands in the command history. The session is sent only to a Google host,
+##'   so a mirror set with \code{\link{set_scholar_mirror}} never receives it.
+##' @examples
+##' \dontrun{
+##'   set_scholar_cookie(cookie = "NID=abc123; GSP=XQwERT")
+##'   set_scholar_cookie(file = "~/scholar-cookies.txt")
+##' }
+##' @export
+##' @author Guangchuang Yu
+set_scholar_cookie <- function(cookie = NULL, file = NULL) {
+    if (!is.null(cookie)) {
+        if (!is.character(cookie) || length(cookie) != 1 || is.na(cookie)) {
+            stop("`cookie` must be a single string in `name=value` form.", call. = FALSE)
+        }
+        options("scholar_cookie" = cookie)
+    }
+    if (!is.null(file)) {
+        if (!is.character(file) || length(file) != 1 || !file.exists(file)) {
+            stop("`file` must name an existing cookie file.", call. = FALSE)
+        }
+        options("scholar_cookie_file" = path.expand(file))
+    }
+    invisible(NULL)
+}
+
+
 ##' Ensures that specified IDs are correctly formatted
 ##'
 ##' @param id a character string specifying the Google Scholar ID.
@@ -54,36 +103,556 @@ get_scholar_resp <- function(url, attempts_left = 5) {
 
     stopifnot(attempts_left > 0)
 
-    resp <- scholar_get(url, handle = scholar_handle())
+    for (attempt in seq_len(attempts_left)) {
 
-    # On a successful GET, return the response
-    if (httr::status_code(resp) == 200) {
-        resp
-    } else if (httr::status_code(resp) == 404) {
-        if (attempts_left == 1) {
-            warning("Page 404. Please check whether the provided URL is correct.")
+        ## A request can fail before any response exists - a TLS handshake that
+        ## does not complete, a reset, a dead proxy - and then libcurl raises
+        ## instead of answering. Letting that escape kills the caller's script,
+        ## which is what it did inside an example during R CMD check, so the
+        ## error is caught here and turned into the same kind of report the
+        ## status codes get.
+        fetched <- tryCatch(scholar_get(url, handle = scholar_handle()),
+                            error = function(e) e)
+        if (inherits(fetched, "error")) {
+            if (scholar_sign_in_transport(fetched)) {
+                warn_scholar(scholar_transport_message(fetched, sign_in = TRUE),
+                             key = "blocked:sign-in")
+                return(NULL)
+            }
+            if (attempt == attempts_left) {
+                warn_scholar(scholar_transport_message(fetched), key = "transport")
+                return(NULL)
+            }
+            scholar_sleep(scholar_backoff_delay(attempt))
+            next
+        }
+        resp <- fetched
+        status <- status_code_or_zero(resp)
+        blocked <- scholar_block_type(resp, status)
+
+        # On a successful GET, return the response
+        if (status == 200 && is.null(blocked)) {
+            return(resp)
+        }
+
+        # Google Scholar itself told us to go away; the reason decides whether
+        # trying again can possibly help.
+        if (status == 404) {
+            if (attempt == attempts_left) {
+                warn_scholar(paste0(
+                    "Page 404. Please check whether the provided URL is correct."
+                ), key = "status:404")
+                return(NULL)
+            }
+            ## No budget check here: a 404 means the address is wrong, and
+            ## `attempts_left` already bounds the retries. Consulting the
+            ## rate-limit budget would report a mistyped ID as 'Google Scholar
+            ## is rate limiting this connection'.
+            wait <- scholar_backoff_delay(attempt)
+            scholar_wait_spent(wait)
+            scholar_sleep(wait)
+            next
+        }
+
+        if (status == 429) {
+            delay <- scholar_backoff_delay(attempt, retry_after = scholar_retry_after(resp))
+            if (scholar_wait_used() + delay > scholar_retry_budget()) {
+                scholar_give_up_rate_limited()
+                return(NULL)
+            }
+            scholar_wait_spent(delay)
+            if (!is.finite(delay) || attempt == attempts_left) {
+                warn_scholar(paste0(
+                    "Google Scholar is rate limiting this connection (HTTP 429).",
+                    "\n  Try again later, spread requests over time with ",
+                    "options(scholar_request_delay = 1), or fetch from a ",
+                    "different IP address."
+                ), key = "status:429")
+                return(NULL)
+            }
+            scholar_sleep(delay)
+            next
+        }
+
+        if (!is.null(blocked) || status %in% c(401L, 403L)) {
+            warn_scholar(scholar_blocked_message(resp, status, blocked),
+                         key = paste0("blocked:", blocked %||% paste0("http", status)))
             return(NULL)
         }
-        scholar_sleep(1)
-        get_scholar_resp(url, attempts_left - 1)
-    } else if(httr::status_code(resp) == 429){
-        warning("Response code 429. Google is rate limiting you for making too many requests too quickly.")
-        return(NULL)
-    } else if (attempts_left == 1) { # When attempts run out, stop with an error
-        warning("Cannot connect to Google Scholar. Is the ID you provided correct?")
-        return(NULL)
-    } else { # Otherwise, sleep a second and try again
-        scholar_sleep(1)
-        get_scholar_resp(url, attempts_left - 1)
+
+        if (attempt == attempts_left) { # When attempts run out, stop with a warning
+            warn_scholar(paste0(
+                "Google Scholar did not return data (HTTP ", status, "). ",
+                "Check that the ID is correct, then see ?scholar for the ",
+                "reasons Scholar refuses a request."
+            ), key = paste0("status:", status))
+            return(NULL)
+        }
+        scholar_sleep(scholar_backoff_delay(attempt))
     }
+
+    NULL
+}
+
+##' @importFrom httr status_code
+status_code_or_zero <- function(resp) {
+    status <- tryCatch(httr::status_code(resp), error = function(e) NA_integer_)
+    if (is.null(status) || is.na(status)) return(-1L)
+    as.integer(status)
+}
+
+## Anchored on the host and path, because Scholar's own URLs carry a
+## `continue=` parameter that quotes the address Google redirected from.
+scholar_sign_in_url <- function(url) {
+    grepl("^https?://([a-z0-9-]+\\.)*google\\.[a-z.]+/(v[0-9]+/)?(signin|AccountChooser)", url, ignore.case = TRUE) ||
+        grepl("^https?://accounts\\.google\\.[a-z.]+/", url, ignore.case = TRUE) ||
+        grepl("[?&]flowEntry=ServiceLogin", url)
+}
+
+#' Does this response hold Scholar's JavaScript captcha instead of data?
+#'
+#' The cited-by pages are answered with an HTTP 200 shell whose only content is
+#' a captcha that has to be cleared by JavaScript, which no script can do. Its
+#' signature is checked first, and a page that does carry data is never called a
+#' refusal: class names alone are useless here because Scholar inlines the
+#' stylesheet that defines every one of them.
+#'
+#' @param resp an httr response
+#' @return \code{TRUE} when the body is the captcha shell
+#' @noRd
+scholar_captcha_body <- function(resp) {
+    txt <- tryCatch(scholar_response_text(resp), error = function(e) NULL)
+    if (is.null(txt)) return(FALSE)
+    scholar_captcha_markup(txt)
+}
+
+scholar_captcha_markup <- function(txt) {
+    if (!is.character(txt) || length(txt) != 1 || is.na(txt) || !nzchar(txt)) {
+        return(FALSE)
+    }
+    ## Attribute form, so that the inlined stylesheet cannot pose as content:
+    ## every Scholar page ships CSS that names all of these classes.
+    if (grepl(paste('class="gs_ri"', 'id="gs_res_ccl_mid"', 'class="gsc_a_tr"',
+                    'id="gsc_prf_in"', 'id="gsc_scb"', 'class="gsc_g_t"',
+                    'class="gs_ai_name"', 'id="gsc_codb_data"', sep = "|"), txt)) {
+        return(FALSE)
+    }
+    grepl("verify that you're not a robot", txt, fixed = TRUE) ||
+        grepl("verify that you&#39;re not a robot", txt, fixed = TRUE) ||
+        grepl("show you're not a robot", txt, fixed = TRUE) ||
+        grepl('id="gs_captcha"', txt, fixed = TRUE)
+}
+
+scholar_captcha_url <- function(url) {
+    grepl("^https?://([a-z0-9-]+\\.)*google\\.[a-z.]+/(sorry|recaptcha)(/|\\?)", url, ignore.case = TRUE)
+}
+
+scholar_response_url <- function(resp) {
+    if (!is.list(resp) || is.null(resp$url)) return("")
+    url <- resp$url
+    if (!is.character(url) || length(url) != 1 || is.na(url)) return("")
+    url
+}
+
+#' The HTTP status Google Scholar asked us to wait for, in seconds
+#'
+#' @param resp an httr response
+#' @return a numeric scalar, or `NA` when the header is absent
+#' @noRd
+scholar_retry_after <- function(resp) {
+    header <- tryCatch(httr::headers(resp)[["retry-after"]], error = function(e) NULL)
+    if (is.null(header) || !nzchar(header)) return(NA_real_)
+    seconds <- suppressWarnings(as.numeric(header))
+    if (is.finite(seconds)) return(seconds)
+    ## `Retry-After: Wed, 21 Oct 2026 07:28:00 GMT` is a deadline, not a delay.
+    deadline <- suppressWarnings(strptime(substr(header, 1, 25),
+                                         "%a, %d %b %Y %H:%M:%S", tz = "GMT"))
+    if (is.na(deadline)) return(NA_real_)
+    max(as.numeric(difftime(deadline, Sys.time(), units = "secs")), 0)
+}
+
+#' What stopped this response from being data, if anything
+#'
+#' The two captcha cases are kept apart because the advice differs: one is a
+#' redirect to Google's challenge host, the other is a page served from Scholar
+#' itself, and telling a user to look for a redirect that never happened is
+#' what this distinction is here to prevent.
+#'
+#' @param resp an httr response
+#' @param status its HTTP status
+#' @return \code{"sign-in"}, \code{"captcha"}, \code{"captcha-page"}, or
+#'   \code{NULL} when the response does carry data
+#' @noRd
+scholar_block_type <- function(resp, status = status_code_or_zero(resp)) {
+    url <- scholar_response_url(resp)
+    if (scholar_sign_in_url(url)) return("sign-in")
+    if (scholar_captcha_url(url)) return("captcha")
+    ## Scholar also answers with a plain HTTP 200 shell whose only content is a
+    ## captcha that needs JavaScript, which is what a script cannot clear. The
+    ## markup of a page that does carry data is checked first so that this
+    ## cannot turn a real answer into a refusal.
+    if (status == 200 && scholar_captcha_body(resp)) return("captcha-page")
+    NULL
+}
+
+scholar_blocked_message <- function(resp, status, type = NULL) {
+    type <- type %||% scholar_block_type(resp, status)
+    ## `switch()` refuses a NULL selector, which is what a plain non-200 status
+    ## produces: nothing in the response identifies a refusal shape, only the
+    ## status code does.
+    if (is.null(type)) type <- "refused"
+    lead <- switch(type,
+        "sign-in" = paste0("Google Scholar redirected to a Google sign-in page, ",
+                           "so this endpoint needs an authenticated session."),
+        "captcha" = paste0("Google Scholar redirected to its captcha page ",
+                           "(google.com/sorry) instead of returning data."),
+        "captcha-page" = paste0("Google Scholar returned a page that asks a ",
+                                "browser to prove it is not a robot, so the ",
+                                "response carries no data."),
+        paste0("Google Scholar refused the request (HTTP ", status, ")."))
+    paste0(lead, "\n", scholar_advice())
+}
+
+#' Was a transport failure really the sign-in redirect failing to complete?
+#'
+#' Google answers an anonymous author search with a redirect to its sign-in
+#' host, and when the handshake with that host does not complete, the error
+#' names the host instead of a status. Retrying cannot change the answer, and
+#' the reason is the same refusal the successful redirect reports.
+#'
+#' @param error the condition raised by [httr::GET()]
+#' @return \code{TRUE} when the failure happened on the way to a Google sign-in
+#' @noRd
+scholar_sign_in_transport <- function(error) {
+    grepl("accounts\\.google\\.[a-z.]+|google\\.com/sorry|ServiceLogin|/signin",
+          conditionMessage(error), ignore.case = TRUE)
+}
+
+#' Explain a request that never produced a response
+#'
+#' @param error the condition raised by [httr::GET()]
+#' @param sign_in whether it failed on the way to a Google sign-in
+#' @return the message to warn with
+#' @noRd
+scholar_transport_message <- function(error, sign_in = FALSE) {
+    detail <- conditionMessage(error)
+    if (sign_in) {
+        return(paste0(
+            "The connection failed on the way to Google Scholar's sign-in page, ",
+            "which is the same refusal as an unreachable session.\n",
+            scholar_advice(), "\n",
+            "  The transport error was: ", detail))
+    }
+    paste0(
+        "The request never reached a reply: ", detail, "\n",
+        "  That is a connection problem, not a wrong ID or URL - check the ",
+        "network, and the proxy settings if this machine needs one (",
+        "httr reads http_proxy and https_proxy).\n",
+        "  Raise options(scholar_timeout) if the connection is merely slow.")
+}
+
+#' The three ways out of a refusal, shared by every refusal message
+#' @noRd
+scholar_advice <- function() {
+    paste0(
+        "  This is what happens when requests come from an IP that Google does not\n",
+        "  trust, typically a hosted application or a CI runner, and it is not a\n",
+        "  problem with the ID or the URL. Carry the session of a browser that can\n",
+        "  open the page with set_scholar_cookie(), point the package at a mirror\n",
+        "  with set_scholar_mirror(), or run it from a workstation.")
+}
+
+#' Report a Scholar problem, once per kind per session
+#'
+#' Retrieval loops call this hundreds of times for the same blocked endpoint, so
+#' repeats are silent. `options(scholar_warned = NULL)` brings the notices back
+#' within a session.
+#'
+#' @param message the warning text
+#' @param key identifies the kind of problem; without one, always warn
+#' @noRd
+warn_scholar <- function(message, key = NULL) {
+    if (!is.null(key)) {
+        seen <- getOption("scholar_warned", character(0))
+        if (key %in% seen) return(invisible(FALSE))
+        options("scholar_warned" = c(seen, key))
+    }
+    warning(message, call. = FALSE)
+    invisible(TRUE)
+}
+
+#' Explain that Scholar refused author search rather than finding nothing
+#'
+#' Google moved `view_op=search_authors` behind a sign-in page, so the result of
+#' \code{\link{get_scholar_id}} and \code{\link{search_scholar_ids}} can be empty even when the
+#' profile exists. Retrying cannot change that, so the user is pointed at the
+#' three things that do work; an empty result with no warning means the name
+#' really did not match anything.
+#' @noRd
+scholar_refused <- function() {
+    if (!isTRUE(getOption("scholar_degraded", TRUE))) return(invisible(FALSE))
+    if (nzchar(scholar_cookie())) {
+        return(warn_scholar(paste0(
+            "Google Scholar refused author search even with the session you supplied. ",
+            "The cookie has probably expired or does not cover this endpoint; ",
+            "export it again with set_scholar_cookie()."),
+            key = "degraded:expired-session"))
+    }
+    warn_scholar(paste0(
+        "Author search is deprecated for anonymous use: Google redirects it to a ",
+        "sign-in page, so the result can be empty even when the profile exists.\n",
+        "  Carry the session of a browser that opens the page with ",
+        "set_scholar_cookie(), point the package at a mirror with ",
+        "set_scholar_mirror(), or search with search_openalex_authors(), which ",
+        "needs no session at all.\n",
+        "  Silence this notice with options(scholar_degraded = FALSE)."),
+        key = "degraded:author-search")
 }
 
 scholar_get <- function(url, handle) {
-    httr::GET(url, handle = handle)
+    delay <- scholar_numeric_option("scholar_request_delay", "SCHOLAR_REQUEST_DELAY", 0)
+    if (delay > 0) scholar_sleep(delay)
+    ## The configuration objects have to reach httr as separate arguments:
+    ## `GET(url, list(user_agent(...), add_headers(...)))` is accepted and then
+    ## dropped, so the request silently goes out with the libcurl User-Agent
+    ## that Scholar answers with HTTP 403. `config` is bound to an empty list
+    ## first so that every setting lands in the dots rather than filling the
+    ## `config` slot by position.
+    settings <- c(list(url = url, config = list(), handle = handle), scholar_headers(url))
+    do.call(httr::GET, settings)
 }
 
 scholar_sleep <- function(time) {
     Sys.sleep(time)
+}
+
+#' Request headers sent to Google Scholar
+#'
+#' Scholar rejects a request whose `User-Agent` announces a library rather than
+#' a browser, so the package always sends browser-like headers. Both can be
+#' overridden, see \code{\link{scholar-package}}.
+#'
+#' @return a list of httr configuration objects
+#' @noRd
+#' @importFrom httr user_agent add_headers
+scholar_headers <- function(url = NULL) {
+    settings <- list(
+        httr::user_agent(scholar_user_agent()),
+        httr::add_headers(.headers = c(
+            Accept = paste("text/html,application/xhtml+xml,",
+                           "application/xml;q=0.9,*/*;q=0.8"),
+            `Accept-Encoding` = "gzip, deflate",
+            `Accept-Language` = scholar_accept_language())),
+        httr::timeout(scholar_timeout())
+    )
+    session <- scholar_session(url)
+    if (!is.null(session)) c(settings, list(session)) else settings
+}
+
+#' The configured Scholar session as request settings
+#'
+#' The session is sent as `CURLOPT_COOKIE`, which libcurl merges with the
+#' cookies Google itself set on the reused handle into a single `Cookie`
+#' header. A `Cookie` entry in the custom headers does the opposite: it replaces
+#' what the engine has, and on the redirect to a sign-in host libcurl strips
+#' custom headers, so the session would be dropped exactly where it is needed.
+#'
+#' A session is a credential, so it is sent only to a Google host: a mirror that
+#' is not Google's would otherwise receive it in plain sight.
+#'
+#' @param url the URL about to be requested; without one no session is attached
+#' @return an httr setting, or `NULL` when nothing is configured
+#' @noRd
+scholar_session <- function(url = NULL) {
+    pairs <- scholar_cookie_pairs()
+    if (!length(pairs)) return(NULL)
+    host <- scholar_host(url %||% getOption("scholar_site"))
+    if (!scholar_google_host(host)) {
+        warn_scholar(paste0(
+            "Not sending the configured Scholar session to ", host, ": it is not a ",
+            "Google host, and a session is a credential. Remove it with ",
+            "options(scholar_cookie = NULL, scholar_cookie_file = NULL) if this ",
+            "mirror is not meant to have it."),
+            key = paste0("cookie:offsite:", host))
+        return(NULL)
+    }
+    ## Values must arrive as named arguments: `set_cookies("NID=a; SOCS=b")`
+    ## is taken for one cookie whose name is empty and whose value is
+    ## percent-encoded, which Google does not read.
+    do.call(httr::set_cookies, as.list(pairs))
+}
+
+scholar_timeout <- function() {
+    scholar_numeric_option("scholar_timeout", "SCHOLAR_TIMEOUT", 30)
+}
+
+scholar_user_agent <- function() {
+    default <- "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    scholar_option("scholar_user_agent", "SCHOLAR_USER_AGENT", default)
+}
+
+scholar_accept_language <- function() {
+    scholar_option("scholar_accept_language", "SCHOLAR_ACCEPT_LANGUAGE", "en-US,en;q=0.9")
+}
+
+#' The configured session as named cookie values
+#'
+#' @return a named character vector, empty when no session is configured
+#' @noRd
+scholar_cookie_pairs <- function() {
+    header <- scholar_cookie()
+    if (!nzchar(header)) return(character(0))
+    entries <- trimws(strsplit(header, ";", fixed = TRUE)[[1]])
+    entries <- entries[nzchar(entries) & grepl("=", entries, fixed = TRUE)]
+    stats::setNames(sub("^[^=]*=", "", entries), sub("=.*$", "", entries))
+}
+
+scholar_host <- function(url) {
+    host <- sub("^[a-zA-Z]+://", "", url)
+    sub("[/?:].*$", "", host)
+}
+
+## Google's own host, and a mirror of it, but not a third-party site that merely
+## speaks the same markup.
+scholar_google_host <- function(host) {
+    grepl("(^|\\.)google\\.[a-z.]+$", host)
+}
+
+#' Session cookie sent to Google Scholar, if the user supplied one
+#'
+#' Some Scholar endpoints answer a script's request with a Google sign-in page
+#' while the very same page is open in a browser, because the browser carries a
+#' session. The value comes from `options(scholar_cookie)` or from a cookie file
+#' exported by a browser, and both are merged into one `Cookie` header.
+#'
+#' @return a character scalar, possibly empty
+#' @noRd
+scholar_cookie <- function() {
+    file <- scholar_option("scholar_cookie_file", "SCHOLAR_COOKIE_FILE", "")
+    pairs <- character(0)
+    if (nzchar(file) && file.exists(file)) {
+        pairs <- c(pairs, read_scholar_cookie_file(file))
+    }
+
+    ## The cookie supplied by hand wins over the one in the file, so that a
+    ## stale export does not shadow a session pasted in for this run.
+    explicit <- scholar_option("scholar_cookie", "SCHOLAR_COOKIE", "")
+    pairs <- c(pairs, unlist(strsplit(explicit, ";", fixed = TRUE), use.names = FALSE))
+
+    pairs <- trimws(pairs)
+    pairs <- pairs[nzchar(pairs) & grepl("=", pairs, fixed = TRUE)]
+    names <- sub("=.*$", "", pairs)
+    keep <- !duplicated(names, fromLast = TRUE)
+    paste(pairs[keep], collapse = "; ")
+}
+
+#' Read `name=value` pairs out of an exported cookie file
+#'
+#' Accepts both the Netscape format written by `curl` and by browser export
+#' extensions, where each cookie is a tab separated row and an `HttpOnly`
+#' cookie's domain cell carries a `#HttpOnly_` prefix, and a plain `Cookie:`
+#' style string.
+#'
+#' @param path path to the cookie file
+#' @return a character vector of `name=value` pairs
+#' @noRd
+read_scholar_cookie_file <- function(path) {
+    lines <- readLines(path, warn = FALSE)
+    lines <- lines[nzchar(trimws(lines))]
+    tabular <- grepl("\t", lines, fixed = TRUE)
+
+    rows <- strsplit(lines[tabular], "\t", fixed = TRUE)
+    complete <- vapply(rows, function(fields) length(fields) >= 7, logical(1))
+    pairs <- vapply(rows[complete], function(fields) paste0(fields[[6]], "=", fields[[7]]),
+                    character(1))
+
+    loose <- lines[!tabular & !grepl("^\\s*#", lines)]
+    extra <- unlist(strsplit(paste(loose, collapse = ";"), ";", fixed = TRUE),
+                    use.names = FALSE)
+
+    trimws(c(unname(pairs), extra))
+}
+
+#' Read a scholar option, falling back to an environment variable
+#'
+#' @param option name of the option, e.g. `"scholar_user_agent"`
+#' @param envvar name of the equivalent environment variable
+#' @param default value used when neither is set to a non-empty string
+#' @return a character scalar
+#' @noRd
+scholar_option <- function(option, envvar, default) {
+    value <- getOption(option, Sys.getenv(envvar, unset = ""))
+    if (is.character(value) && length(value) == 1 && nzchar(value) && !is.na(value)) {
+        return(value)
+    }
+    default
+}
+
+#' How long to wait before the next attempt at a Scholar request
+#'
+#' Waits grow geometrically from `options(scholar_retry_delay)` (1 second by
+#' default) up to `options(scholar_retry_max_delay)` (30 seconds), with a
+#' random fraction added so that a fleet of CI jobs does not come back in sync.
+#' A `Retry-After` header from Scholar is honoured, but when Google asks for
+#' longer than the maximum delay the result is `Inf`: waiting is pointless.
+#'
+#' @param attempt the number of the attempt just made, starting at 1
+#' @param retry_after value of the `Retry-After` header, or `NA`
+#' @return seconds to wait, or `Inf` when the request should be abandoned
+#' @noRd
+#' @importFrom stats runif
+scholar_backoff_delay <- function(attempt, retry_after = NA_real_) {
+    base <- scholar_numeric_option("scholar_retry_delay", "SCHOLAR_RETRY_DELAY", 1)
+    cap <- scholar_numeric_option("scholar_retry_max_delay", "SCHOLAR_RETRY_MAX_DELAY", 30)
+    if (is.finite(retry_after) && retry_after > 0) {
+        return(if (retry_after > cap) Inf else retry_after)
+    }
+    attempt <- max(1L, as.integer(attempt))
+    delay <- base * 2^(attempt - 1L)
+    jitter <- suppressWarnings(stats::runif(1, min = 0, max = 0.25 * delay))
+    min(delay + jitter, cap)
+}
+
+#' How long this process is willing to spend waiting for Scholar
+#'
+#' Retrying a rate-limited endpoint is polite up to a point: a shared IP that is
+#' being refused can turn a loop over a handful of queries into a wait of
+#' several minutes, which is exactly what a CI job must not do - it makes the
+#' refusal longer, not shorter. Once the accumulated waiting passes
+#' `options(scholar_retry_budget)` (60 seconds by default), a rate-limited
+#' request is abandoned with the reason instead of queued behind more delays.
+#' @noRd
+scholar_retry_budget <- function() {
+    scholar_numeric_option("scholar_retry_budget", "SCHOLAR_RETRY_BUDGET", 60)
+}
+
+scholar_wait_used <- function() {
+    used <- getOption("scholar_wait_used", 0)
+    if (is.numeric(used) && length(used) == 1 && is.finite(used)) used else 0
+}
+
+scholar_wait_spent <- function(seconds) {
+    options("scholar_wait_used" = scholar_wait_used() + seconds)
+}
+
+scholar_give_up_rate_limited <- function() {
+    warn_scholar(paste0(
+        "Google Scholar is rate limiting this connection and the waiting budget ",
+        "for this session is spent (options(scholar_retry_budget), ",
+        scholar_numeric_option("scholar_retry_budget", "SCHOLAR_RETRY_BUDGET", 60),
+        " seconds), so no further attempt is made.\n",
+        "  Retry later from a different IP, spread requests over time with ",
+        "options(scholar_request_delay = 1), or raise the budget if this is a ",
+        "long-running job on a connection Google does not distrust."),
+        key = "status:429")
+}
+
+scholar_numeric_option <- function(option, envvar, default) {
+    value <- suppressWarnings(as.numeric(getOption(option, Sys.getenv(envvar, unset = ""))))
+    if (length(value) == 1 && is.finite(value) && value >= 0) {
+        return(value)
+    }
+    default
 }
 
 # GB: Add this function to R/utils.R, right after get_scholar_resp() to fix
@@ -146,9 +715,16 @@ scholar_response_text <- function(resp) {
 # get a curl handle with Google scholar cookies set
 scholar_handle <- function() {
     site <- getOption("scholar_site")
-    if (getOption("scholar_call_home")) {
+    if (isTRUE(getOption("scholar_call_home"))) {
         sample_url <- paste0(site, "/citations?user=B7vSqZsAAAAJ")
-        sink <- GET(sample_url)
+        ## Goes through scholar_get() so that the session is seeded with the
+        ## same headers, and the same cookie, as the requests that follow it.
+        ## Seeding is a convenience - it collects the cookies Google hands out -
+        ## so a connection that fails here must not take the whole call down:
+        ## the request that follows may well succeed on its own, and a THROWN
+        ## transport error would escape every guard the retry loop now has.
+        sink <- tryCatch(suppressWarnings(scholar_get(sample_url, handle = NULL)),
+                         error = function(e) NULL)
         options("scholar_call_home"=FALSE, "scholar_handle"=sink)
     }
     getOption("scholar_handle")
@@ -167,4 +743,10 @@ compose_url <- function(id, url_template) {
 # Extract the google scholar id of a url
 grab_id <- function(url) {
     stringr::str_extract(url, "(?<=user=)[^&#]*")
+}
+
+#' Fall back when a value is NULL
+#' @noRd
+`%||%` <- function(value, fallback) {
+    if (is.null(value)) fallback else value
 }
